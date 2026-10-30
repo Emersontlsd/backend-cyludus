@@ -1,7 +1,7 @@
 
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { prisma } from "./src/config/prisma.ts";
+import { prisma } from "../src/config/prisma.ts";
 
 async function main() {
   const name = process.env.ADMIN_NAME?.trim();

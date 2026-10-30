@@ -1,5 +1,5 @@
 
-import { prisma } from "./src/config/prisma.ts";
+import { prisma } from "../src/config/prisma.ts";
 
 async function main() {
   console.log("Modelo User:", typeof prisma.user);

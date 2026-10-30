@@ -1,5 +1,5 @@
 
-import { prisma } from "./src/config/prisma.ts";
+import { prisma } from "../src/config/prisma.ts";
 
 try {
   const curso = await prisma.course.create({

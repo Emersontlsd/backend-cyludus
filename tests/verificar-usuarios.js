@@ -1,7 +1,7 @@
 
 import "dotenv/config";
-import { prisma } from "./src/config/prisma.ts";
-import { listarUsuarios } from "./src/modules/users/user.service.js";
+import { prisma } from "../src/config/prisma.ts";
+import { listarUsuarios } from "../src/modules/users/user.service.js";
 
 async function main() {
   try {
