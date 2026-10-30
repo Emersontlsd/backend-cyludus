@@ -1,0 +1,26 @@
+
+node_modules/
+
+# Segredos e variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Arquivos gerados pelo Prisma
+/src/generated/prisma
+
+# Logs
+*.log
+npm-debug.log*
+
+# Configurações locais de ferramentas
+.vscode/
+.agents/
+.claude/
+.windsurf/
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+logins.txt
