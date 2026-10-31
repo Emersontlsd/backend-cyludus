@@ -26,7 +26,7 @@ router.get("/", async (req, res) => {
     const categorias = await listarCategorias();
     return res.status(200).json(categorias);
   } catch (erro) {
-    console.error("Erro ao listar categorias: ".erro);
+    console.error("Erro ao listar categorias: ", erro);
     return res.status(500).json({
       mensagem: "Não foi possível listar as categorias.",
     });
