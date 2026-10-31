@@ -30,6 +30,18 @@ async function main() {
     );
   }
 
+  const administradorExistente = await prisma.user.findFirst({
+    where: {
+      role: "ADMIN",
+    },
+  });
+
+  if (administradorExistente) {
+    throw new Error(
+      "Já existe um administrador cadastrado. Não é permitido criar outro.",
+    );
+  }
+
   const administrador = await prisma.user.create({
     data: {
       name,
