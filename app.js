@@ -5,6 +5,7 @@ import courseRoutes from "./src/routes/course.routes.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import userRoutes from "./src/routes/user.routes.js";
 import categoryRoutes from "./src/routes/category.routes.js";
+import enrollmentRoutes from "./src/routes/enrollment.routes.js";
 
 const app = express();
 
@@ -22,5 +23,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/enrollments", enrollmentRoutes);
+
 
 export default app;
