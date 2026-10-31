@@ -88,6 +88,9 @@ model Payment {
   enrollmentId String
 
   provider String @default("MERCADO_PAGO")
+  providerOrderId String? @unique
+  idempotencyKey String? @unique
+  checkoutUrl     String?
   providerPaymentId String? @unique
   status String @default("PENDING")
   paymentMethod String?
