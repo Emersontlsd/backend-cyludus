@@ -297,7 +297,7 @@ describe("Rotas de autenticação", () => {
 
   it("deve impedir que administrador desative a própria conta", async () => {
     const administrador = {
-      id: "admin-teste-123",
+      id: "c123456789012345678901234",
       name: "Administrador",
       email: "admin@teste.com",
       role: "ADMIN",
@@ -329,7 +329,7 @@ describe("Rotas de autenticação", () => {
 
   it("deve permitir que administrador desative outro usuário", async () => {
     const administrador = {
-      id: "admin-teste-123",
+      id: "c123456789012345678901234",
       name: "Administrador",
       email: "admin@teste.com",
       role: "ADMIN",
@@ -337,7 +337,7 @@ describe("Rotas de autenticação", () => {
     };
 
     const usuarioAtualizado = {
-      id: "usuario-comum-123",
+      id: "c223456789012345678901234",
       name: "Usuário Comum",
       email: "usuario@teste.com",
       role: "USER",
@@ -355,7 +355,7 @@ describe("Rotas de autenticação", () => {
     });
 
     const resposta = await request(app)
-      .patch("/api/users/usuario-comum-123/status")
+      .patch("/api/users/c223456789012345678901234/status")
       .set("Authorization", `Bearer ${token}`)
       .send({
         isActive: false,
@@ -366,7 +366,7 @@ describe("Rotas de autenticação", () => {
     expect(resposta.body.mensagem).toBe("Usuário desativado com sucesso.");
 
     expect(resposta.body.usuario).toMatchObject({
-      id: "usuario-comum-123",
+      id: "c223456789012345678901234",
       isActive: false,
     });
 
@@ -374,7 +374,7 @@ describe("Rotas de autenticação", () => {
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          id: "usuario-comum-123",
+          id: "c223456789012345678901234",
         },
         data: {
           isActive: false,

@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import { z } from "zod";
 
@@ -16,7 +17,7 @@ const router = Router();
 
 router.use(autenticarToken, exigirAdministrador);
 
-const idSchema = z.string().min(1);
+const idSchema = z.string().cuid("ID inválido.");
 
 const statusSchema = z
   .object({
@@ -31,7 +32,7 @@ router.get("/", async (req, res) => {
 
     return res.status(200).json(usuarios);
   } catch (erro) {
-    console.error("Erro ao listar usuários: ".erro);
+    console.error("Erro ao listar usuários:", erro);
 
     return res.status(500).json({
       mensagem: "Não foi possível listar os usuários.",
@@ -60,7 +61,7 @@ router.get("/:id", async (req, res) => {
 
     return res.status(200).json(usuario);
   } catch (erro) {
-    console.erro("Erro ao consultar usuário: ", erro);
+    console.error("Erro ao consultar usuário:", erro);
 
     return res.status(500).json({
       mensagem: "Não foi possível consultar o usuário.",
@@ -89,7 +90,10 @@ router.patch("/:id/status", async (req, res) => {
   }
 
   try {
-    const usuario = await alterarStatusUsuario(validacaoId.data, isActive);
+    const usuario = await alterarStatusUsuario(
+      validacaoId.data,
+      isActive
+    );
 
     return res.status(200).json({
       mensagem: isActive
@@ -104,10 +108,10 @@ router.patch("/:id/status", async (req, res) => {
       });
     }
 
-    console.error("Erro ao alterar status do usuário: ", erro);
+    console.error("Erro ao alterar status do usuário:", erro);
 
     return res.status(500).json({
-        mensagem: "Não foi possível alterar o status do usuário.",
+      mensagem: "Não foi possível alterar o status do usuário.",
     });
   }
 });
