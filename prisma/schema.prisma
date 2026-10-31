@@ -29,6 +29,8 @@ model Course {
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
+  enrollments Enrollment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -40,6 +42,9 @@ model User {
   passwordHash String
   role         String   @default("USER")
   isActive     Boolean  @default(true)
+
+  enrollments Enrollment[]
+
   createdAt    DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -53,3 +58,51 @@ model Category {
 
   courses Course[]
 }
+
+model Enrollment {
+  id String @id @default(uuid())
+  userId String
+  courseId String
+
+  status String @default("PENDING")
+  priceAtPurchase Decimal @db.Decimal(10, 2)
+  expiresAt DateTime
+  activatedAt DateTime?
+  cancelledAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model Payment {
+  id String @id @default(uuid())
+  enrollmentId String
+
+  provider String @default("MERCADO_PAGO")
+  providerPaymentId String? @unique
+  status String @default("PENDING")
+  paymentMethod String?
+  installments Int @default(1)
+  amount Decimal @db.Decimal(10, 2)
+  currency String @default("BRL")
+
+  approvedAt DateTime?
+  refundedAt DateTime?
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enrollmentId])
+  @@index([status])
+  }
