@@ -1,5 +1,9 @@
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  criarInscricao,
+  listarMinhasInscricoes,
+} from "../src/modules/enrollments/enrollment.service.js";
 
 const { prismaMock, txMock } = vi.hoisted(() => {
   const txMock = {
@@ -8,7 +12,9 @@ const { prismaMock, txMock } = vi.hoisted(() => {
     },
     enrollment: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       create: vi.fn(),
     },
   };
@@ -17,6 +23,10 @@ const { prismaMock, txMock } = vi.hoisted(() => {
     txMock,
     prismaMock: {
       $transaction: vi.fn(),
+      enrollment: {
+        findMany: vi.fn(),
+        updateMany: vi.fn(),
+      },
     },
   };
 });
@@ -94,9 +104,7 @@ describe("Serviço de inscrições", () => {
       isPublished: false,
     });
 
-    await expect(
-      criarInscricao(userId, courseId)
-    ).rejects.toMatchObject({
+    await expect(criarInscricao(userId, courseId)).rejects.toMatchObject({
       statusCode: 404,
     });
 
@@ -106,9 +114,7 @@ describe("Serviço de inscrições", () => {
   it("não deve permitir inscrição em curso inexistente", async () => {
     txMock.course.findUnique.mockResolvedValue(null);
 
-    await expect(
-      criarInscricao(userId, courseId)
-    ).rejects.toMatchObject({
+    await expect(criarInscricao(userId, courseId)).rejects.toMatchObject({
       statusCode: 404,
     });
 
@@ -122,9 +128,7 @@ describe("Serviço de inscrições", () => {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
 
-    await expect(
-      criarInscricao(userId, courseId)
-    ).rejects.toMatchObject({
+    await expect(criarInscricao(userId, courseId)).rejects.toMatchObject({
       statusCode: 409,
     });
 
@@ -138,9 +142,7 @@ describe("Serviço de inscrições", () => {
       expiresAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
-    await expect(
-      criarInscricao(userId, courseId)
-    ).rejects.toMatchObject({
+    await expect(criarInscricao(userId, courseId)).rejects.toMatchObject({
       statusCode: 409,
     });
 
@@ -163,4 +165,64 @@ describe("Serviço de inscrições", () => {
 
     expect(txMock.enrollment.create).toHaveBeenCalledOnce();
   });
-});
+
+  it("deve listar somente as inscrições do usuário autenticado", async () => {
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    const resultado = await listarMinhasInscricoes(userId);
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId },
+      }),
+    );
+
+    expect(resultado).toEqual([]);
+  });
+
+  it("deve expirar inscrições pendentes vencidas antes da listagem", async () => {
+    await listarMinhasInscricoes(userId);
+
+    expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId,
+        status: "PENDING",
+        expiresAt: {
+          lte: expect.any(Date),
+        },
+      },
+      data: {
+        status: "EXPIRED",
+      },
+    });
+  });
+
+  it("deve retornar as inscrições com informações do curso e pagamentos", async () => {
+    const inscricoes = [
+      {
+        id: "inscricao-123",
+        status: "ACTIVE",
+        course: {
+          id: courseId,
+          title: "Curso de JavaScript",
+          slug: "curso-javascript",
+        },
+        payments: [
+          {
+            id: "pagamento-123",
+            status: "APPROVED",
+            installments: 3,
+          },
+        ],
+      },
+    ];
+
+    prismaMock.enrollment.findMany.mockResolvedValue(inscricoes);
+
+    const resultado = await listarMinhasInscricoes(userId);
+
+    expect(resultado).toEqual(inscricoes);
+    expect(resultado[0].course.title).toBe("Curso de JavaScript");
+    expect(resultado[0].payments[0].status).toBe("APPROVED");
+  });
+}); // final teste

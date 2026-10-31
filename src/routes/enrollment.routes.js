@@ -2,7 +2,10 @@ import { Router } from "express";
 
 import { autenticarToken } from "../middlewares/auth.middleware.js";
 import { criarInscricaoSchema } from "../modules/enrollments/enrollment.validation.js";
-import { criarInscricao } from "../modules/enrollments/enrollment.service.js";
+import {
+  criarInscricao,
+  listarMinhasInscricoes,
+} from "../modules/enrollments/enrollment.service.js";
 
 const router = Router();
 
@@ -38,6 +41,24 @@ router.post("/", async (req, res) => {
                 erro.statusCode
                     ? erro.message
                     : "Não foi possível criar a inscrição.",
+        });
+    }
+});
+
+// listar inscricoes do usuario autenticado
+router.get("/me", async (req, res) => {
+    try {
+        const inscricoes = await listarMinhasInscricoes(req.usuario.id);
+
+        return res.status(200).json({
+            total: inscricoes.length,
+            inscricoes,
+        });
+    } catch (erro) {
+        console.error("Erro ao listar inscrições: ", erro);
+
+        return res.status(500).json({
+            mensagem: "Não foi possível consultar suas inscrições.",
         });
     }
 });
