@@ -343,7 +343,7 @@ describe("Rotas de autenticação", () => {
       role: "USER",
       isActive: false,
       createdAt: new Date("2026-01-01T12:00:00.000Z"),
-      updateAt: new Date("2026-01-02T12:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T12:00:00.000Z"),
     };
 
     prisma.user.findUnique.mockResolvedValue(administrador);

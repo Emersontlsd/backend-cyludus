@@ -7,7 +7,7 @@ const camposUsuariosPublicos = {
   role: true,
   isActive: true,
   createdAt: true,
-  updateAt: true,
+  updatedAt: true,
 };
 
 export async function listarUsuarios() {
