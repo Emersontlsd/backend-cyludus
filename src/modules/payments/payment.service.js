@@ -1,4 +1,5 @@
 import { prisma } from "../../config/prisma.ts";
+import { randomUUID } from "node:crypto";
 
 export async function validarInscricaoParaPagamento(userId, enrollmentId) {
   const inscricao = await prisma.enrollment.findUnique({
@@ -95,4 +96,52 @@ export async function validarInscricaoParaPagamento(userId, enrollmentId) {
       title: inscricao.course.title,
     },
   };
+}
+
+export async function obterOuCriarPagamento(inscricao) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+    const pagamentoExistente = await tx.payment.findFirst({
+      where: {
+        enrollmentId: inscricao.id,
+        status: {
+          in: ["INITIATING", "PENDING"],
+        },
+      },
+    });
+
+    if (pagamentoExistente) {
+      return pagamentoExistente;
+    }
+
+    return tx.payment.create({
+      data: {
+        enrollmentId: inscricao.id,
+        provider: "MERCADO_PAGO",
+        status: "INITIATING",
+        idempotencyKey: randomUUID(),
+        amount: inscricao.priceAtPurchase,
+        currency: "BRL",
+        installments: 1,
+      },
+    });
+  });
+  } catch (erro) {
+    if (erro.code === "P2002" || erro.meta?.code === "23505") {
+      const pagamentoExistente = await prisma.payment.findFirst({
+        where: {
+          enrollmentId: inscricao.id,
+          status: {
+            in: ["INITIATING", "PENDING"],
+          },
+        },
+      });
+
+      if (pagamentoExistente) {
+        return pagamentoExistente;
+      }
+    }
+
+    throw erro;
+  }
 }
