@@ -36,23 +36,23 @@ model Course {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   name         String
-  email        String   @unique
+  email        String  @unique
   passwordHash String
-  role         String   @default("USER")
-  isActive     Boolean  @default(true)
+  role         String  @default("USER")
+  isActive     Boolean @default(true)
 
   enrollments Enrollment[]
 
-  createdAt    DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Category {
-  id String @id @default(uuid())
-  name String @unique
-  slug String @unique
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -60,17 +60,17 @@ model Category {
 }
 
 model Enrollment {
-  id String @id @default(uuid())
-  userId String
+  id       String @id @default(uuid())
+  userId   String
   courseId String
 
-  status String @default("PENDING")
-  priceAtPurchase Decimal @db.Decimal(10, 2)
-  expiresAt DateTime
-  activatedAt DateTime?
-  cancelledAt DateTime?
+  status          String    @default("PENDING")
+  priceAtPurchase Decimal   @db.Decimal(10, 2)
+  expiresAt       DateTime
+  activatedAt     DateTime?
+  cancelledAt     DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
   course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
 
   payments Payment[]
@@ -84,19 +84,20 @@ model Enrollment {
 }
 
 model Payment {
-  id String @id @default(uuid())
+  id           String @id @default(uuid())
   enrollmentId String
 
-  provider String @default("MERCADO_PAGO")
-  providerOrderId String? @unique
-  idempotencyKey String? @unique
-  checkoutUrl     String?
+  provider          String  @default("MERCADO_PAGO")
+  providerOrderId   String? @unique
+  idempotencyKey    String? @unique
+  orderRequest      Json?
+  checkoutUrl       String?
   providerPaymentId String? @unique
-  status String @default("PENDING")
-  paymentMethod String?
-  installments Int @default(1)
-  amount Decimal @db.Decimal(10, 2)
-  currency String @default("BRL")
+  status            String  @default("PENDING")
+  paymentMethod     String?
+  installments      Int     @default(1)
+  amount            Decimal @db.Decimal(10, 2)
+  currency          String  @default("BRL")
 
   approvedAt DateTime?
   refundedAt DateTime?
@@ -108,4 +109,4 @@ model Payment {
 
   @@index([enrollmentId])
   @@index([status])
-  }
+}

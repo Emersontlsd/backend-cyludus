@@ -13,7 +13,9 @@ vi.mock("../src/config/prisma.ts", () => ({
     },
     payment: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -237,24 +239,48 @@ describe("Criação e recuperação de pagamento", () => {
     expect(prisma.payment.create).not.toHaveBeenCalled();
   });
 
+  it("deve preservar o orderRequest do pagamento existente", async () => {
+    const orderRequest = {
+      type: "online",
+      total_amount: "199.90",
+      currency: "BRL",
+    };
+
+    const pagamentoExistente = {
+      id: "pagamento-123",
+      enrollmentId: inscricaoValida.id,
+      status: "INITIATING",
+      idempotencyKey: "chave-existente",
+      orderRequest,
+      checkoutUrl: null,
+    };
+
+    prisma.payment.findFirst.mockResolvedValue(pagamentoExistente);
+
+    const resultado = await obterOuCriarPagamento(inscricaoValida);
+
+    expect(resultado.orderRequest).toEqual(orderRequest);
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
   it("deve recuperar o pagamento existente quando houver conflito de unicidade", async () => {
-  const pagamentoExistente = {
-    id: "pagamento-123",
-    enrollmentId: inscricaoValida.id,
-    status: "INITIATING",
-    idempotencyKey: "chave-ja-persistida",
-    checkoutUrl: null,
-  };
+    const pagamentoExistente = {
+      id: "pagamento-123",
+      enrollmentId: inscricaoValida.id,
+      status: "INITIATING",
+      idempotencyKey: "chave-ja-persistida",
+      checkoutUrl: null,
+    };
 
-  const erroUnicidade = new Error("Unique constraint failed");
-  erroUnicidade.code = "P2002";
+    const erroUnicidade = new Error("Unique constraint failed");
+    erroUnicidade.code = "P2002";
 
-  prisma.$transaction.mockRejectedValueOnce(erroUnicidade);
-  prisma.payment.findFirst.mockResolvedValue(pagamentoExistente);
+    prisma.$transaction.mockRejectedValueOnce(erroUnicidade);
+    prisma.payment.findFirst.mockResolvedValue(pagamentoExistente);
 
-  const resultado = await obterOuCriarPagamento(inscricaoValida);
+    const resultado = await obterOuCriarPagamento(inscricaoValida);
 
-  expect(resultado).toEqual(pagamentoExistente);
-  expect(resultado.idempotencyKey).toBe("chave-ja-persistida");
-});
+    expect(resultado).toEqual(pagamentoExistente);
+    expect(resultado.idempotencyKey).toBe("chave-ja-persistida");
+  });
 });

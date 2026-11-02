@@ -1,5 +1,9 @@
 import { prisma } from "../../config/prisma.ts";
+import { Prisma } from "../../generated/prisma/client.ts";
 import { randomUUID } from "node:crypto";
+
+import { construirOrderRequest } from "./payment-order.builder.js";
+import { criarOrderMercadoPago } from "./mercadopago-order.service.js";
 
 export async function validarInscricaoParaPagamento(userId, enrollmentId) {
   const inscricao = await prisma.enrollment.findUnique({
@@ -144,4 +148,97 @@ export async function obterOuCriarPagamento(inscricao) {
 
     throw erro;
   }
+}
+
+export async function criarCheckoutPagamento(userId, enrollmentId) {
+  // valida a inscrição e recupera os dados do comprador e do curso
+  const inscricao = await validarInscricaoParaPagamento(
+    userId,
+    enrollmentId,
+  );
+
+  // recupera ou cria o pagamento local
+  const pagamento = await obterOuCriarPagamento(inscricao);
+
+  // se o checkout ja existe, devolve a mesma url
+  if (pagamento.status === "PENDING" && pagamento.checkoutUrl) {
+    return pagamento;
+  }
+
+  // reutiliza o corpo salvo ou constroi um novo
+  let orderRequest = pagamento.orderRequest;
+
+  if (!orderRequest) {
+    orderRequest = construirOrderRequest({
+      pagamento,
+      inscricao,
+    });
+
+    // Salva o corpo somente se ainda estiver vazio.
+    // Isso impede que requisições simultâneas sobrescrevam a ordem.
+    await prisma.payment.updateMany({
+      where: {
+        id: pagamento.id,
+        orderRequest: Prisma.DbNull,
+      },
+      data: {
+        orderRequest,
+      },
+    });
+
+    // recupera o corpo efetivamente salvo no banco
+    const pagamentoAtualizado = await prisma.payment.findUnique({
+      where: {
+        id: pagamento.id,
+      },
+      select: {
+        orderRequest: true,
+      },
+    });
+
+    if (!pagamentoAtualizado?.orderRequest) {
+      const erro = new Error(
+        "Não foi possível recuperar os dados da ordem de pagamento.",
+      );
+
+      erro.statusCode = 500;
+      throw erro;
+    }
+
+    orderRequest = pagamentoAtualizado.orderRequest;
+  }
+
+  // cria ou recupera a ordem usando a mesma chave de idempotência
+  const resposta = await criarOrderMercadoPago({
+    body: orderRequest,
+    idempotencyKey: pagamento.idempotencyKey,
+  });
+
+  // so aceita uma resposta que contenha os dados necessarios
+  if (
+    !resposta ||
+    typeof resposta.id !== "string" ||
+    !resposta.id ||
+    typeof resposta.checkout_url !== "string" ||
+    !resposta.checkout_url
+  ) {
+    const erro = new Error(
+      "O Mercado Pago não retornou os dados necessários para o checkout.",
+    );
+
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  // persiste a ordem e libera o URL para o frontend
+  return prisma.payment.update({
+    where: {
+      id: pagamento.id,
+    },
+    data: {
+      providerOrderId: resposta.id,
+      checkoutUrl: resposta.checkout_url,
+      status: "PENDING",
+    },
+  });
 }
