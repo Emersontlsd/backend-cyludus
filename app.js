@@ -7,6 +7,7 @@ import userRoutes from "./src/routes/user.routes.js";
 import categoryRoutes from "./src/routes/category.routes.js";
 import enrollmentRoutes from "./src/routes/enrollment.routes.js";
 import paymentRoutes from "./src/routes/payment.routes.js";
+import paymentWebhookRoutes from "./src/routes/payment-webhook.routes.js";
 
 const app = express();
 
@@ -25,7 +26,9 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/enrollments", enrollmentRoutes);
+app.use("/api/payments/webhook", paymentWebhookRoutes);
 app.use("/api/payments", paymentRoutes);
+
 
 
 export default app;
