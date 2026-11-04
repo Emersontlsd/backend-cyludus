@@ -20,3 +20,16 @@ export async function criarOrderMercadoPago({
         },
     });
 }
+
+export async function consultarOrderMercadoPago({id}) {
+    if (typeof id !== "string" || !id.trim()) {
+        throw new Error("O ID do pedido do Mercado Pago é obrigatório.");
+    }
+
+    const cliente = obterClienteMercadopago();
+    const order = new Order(cliente);
+
+    return order.get({
+        id: id.trim(),
+    });
+}
