@@ -497,6 +497,62 @@ describe("Orquestração do webhook do Mercado Pago", () => {
     expect(mocks.validarPrazoAprovacaoMercadoPago).not.toHaveBeenCalled();
   });
 
+  it("reconhece webhook repetido com ocorrencia financeira resolvida", async () => {
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: "789",
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "EXPIRED",
+      },
+    };
+
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoAprovado);
+
+    mocks.verificarPagamentoJaProcessado.mockReturnValue(true);
+
+    const ocorrenciaResolvida = {
+      id: "ocorrencia-resolvida-123",
+      paymentId: "pagamento-123",
+      providerPaymentId: "789",
+      type: "ENROLLMENT_EXPIRED",
+      status: "RESOLVED",
+    };
+
+    mocks.buscarOcorrenciaFinanceira.mockResolvedValue(ocorrenciaResolvida);
+
+    const resultado = await processarWebhookPagamento({
+      orderId: "order-456",
+      agora,
+    });
+
+    expect(mocks.verificarPagamentoJaProcessado).toHaveBeenCalledWith({
+      pagamento: pagamentoAprovado,
+      providerPaymentId: "789",
+    });
+
+    expect(mocks.buscarOcorrenciaFinanceira).toHaveBeenCalledWith({
+      paymentId: "pagamento-123",
+      providerPaymentId: "789",
+      types: [
+        "ENROLLMENT_CONFLICT",
+        "ENROLLMENT_EXPIRED",
+        "ENROLLMENT_CANCELLED",
+      ],
+    });
+
+    expect(resultado).toEqual({
+      paymentStatus: "APPROVED",
+      enrollmentStatus: "EXPIRED",
+      incidentType: "ENROLLMENT_EXPIRED",
+      alreadyProcessed: true,
+    });
+
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+    expect(mocks.validarPrazoAprovacaoMercadoPago).not.toHaveBeenCalled();
+  });
+
   it("reconhece pagamento já processado com ocorrência ENROLLMENT_CANCELLED", async () => {
     mocks.localizarPagamentoNotificado.mockResolvedValue({
       ...pagamento,

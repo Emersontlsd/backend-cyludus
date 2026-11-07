@@ -117,7 +117,9 @@ export async function buscarOcorrenciaFinanceira({
       type: {
         in: types,
       },
-      status: "OPEN",
+      status: {
+        in: ["OPEN", "RESOLVED"],
+      },
     },
   });
 }

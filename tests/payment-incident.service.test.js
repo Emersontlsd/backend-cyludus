@@ -14,7 +14,10 @@ vi.mock("../src/config/prisma.ts", () => ({
   },
 }));
 
-import { registrarOcorrenciaFinanceira } from "../src/modules/payments/payment-incident.service.js";
+import {
+  registrarOcorrenciaFinanceira,
+  buscarOcorrenciaFinanceira,
+} from "../src/modules/payments/payment-incident.service.js";
 
 describe("Serviço de ocorrências financeiras", () => {
   beforeEach(() => {
@@ -283,6 +286,43 @@ describe("Serviço de ocorrências financeiras", () => {
 
     // Não tenta consultar novamente após o conflito.
     expect(mocks.findFirst).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("reconhece ocorrencia financeira resolvida em webhook repetido", async () => {
+    const incident = {
+      id: "incidente-resolvido-123",
+      paymentId: "pagamento-123",
+      providerPaymentId: "789",
+      type: "ENROLLMENT_EXPIRED",
+      status: "RESOLVED",
+      reason: "Pagamento aprovado apos o vencimento.",
+    };
+
+    mocks.findFirst.mockResolvedValue(incident);
+
+    const resultado = await buscarOcorrenciaFinanceira({
+      paymentId: "pagamento-123",
+      providerPaymentId: "789",
+      types: ["ENROLLMENT_EXPIRED"],
+    });
+
+    expect(mocks.findFirst).toHaveBeenCalledWith({
+      where: {
+        paymentId: "pagamento-123",
+        providerPaymentId: "789",
+        type: {
+          in: ["ENROLLMENT_EXPIRED"],
+        },
+        status: {
+          in: ["OPEN", "RESOLVED"],
+        },
+      },
+    });
+
+    expect(resultado).toEqual(incident);
+
+    // A consulta nao deve criar nem modificar ocorrencias.
     expect(mocks.create).not.toHaveBeenCalled();
   });
 });
