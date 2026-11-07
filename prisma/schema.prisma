@@ -107,6 +107,29 @@ model Payment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  incidents PaymentIncident[]
+
   @@index([enrollmentId])
+  @@index([status])
+}
+
+
+
+model PaymentIncident {
+  id        String @id @default(uuid())
+  paymentId String
+
+  type   String
+  status String @default("OPEN")
+  reason String
+
+  providerPaymentId String?
+
+  detectedAt DateTime @default(now())
+  resolvedAt DateTime?
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId])
   @@index([status])
 }

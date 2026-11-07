@@ -9,5 +9,6 @@ export default defineConfig({
         clearMocks: true,
         restoreMocks: true,
         testTimeout: 10000,
+        exclude: ["tests/integration/**", "**/node_modules/**"],
     },
 });

@@ -1,4 +1,4 @@
-import { Order } from "mercadopago";
+import { Order, Payment } from "mercadopago";
 
 import { obterClienteMercadopago } from "../../config/mercadopago.js";
 
@@ -32,4 +32,25 @@ export async function consultarOrderMercadoPago({id}) {
     return order.get({
         id: id.trim(),
     });
+}
+
+
+export async function consultarPagamentoMercadoPago({ id }) {
+  if (
+    (typeof id !== "string" && typeof id !== "number") ||
+    !String(id).trim()
+  ) {
+    const erro = new Error(
+      "O identificador do pagamento do Mercado Pago é obrigatório.",
+    );
+
+    erro.statusCode = 400;
+    throw erro;
+  }
+
+  const pagamento = new Payment(obterClienteMercadopago());
+
+  return pagamento.get({
+    id: String(id).trim(),
+  });
 }
