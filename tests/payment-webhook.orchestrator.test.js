@@ -370,6 +370,121 @@ describe("Orquestração do webhook do Mercado Pago", () => {
     expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
   });
 
+  it("recupera aprovação concorrente da mesma transação", async () => {
+    const erroConcorrencia = Object.assign(
+      new Error("O pagamento não está disponível para aprovação."),
+      { statusCode: 409 },
+    );
+
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: transacao.providerPaymentId,
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "ACTIVE",
+      },
+    };
+
+    mocks.registrarPagamentoAprovado.mockRejectedValue(erroConcorrencia);
+
+    mocks.localizarPagamentoNotificado
+      .mockResolvedValueOnce(pagamento)
+      .mockResolvedValueOnce(pagamentoAprovado);
+
+    mocks.verificarPagamentoJaProcessado.mockImplementation(
+      ({ pagamento: pagamentoVerificado, providerPaymentId }) =>
+        pagamentoVerificado.status === "APPROVED" &&
+        pagamentoVerificado.providerPaymentId === providerPaymentId,
+    );
+
+    const resultado = await processarWebhookPagamento({
+      orderId: "order-456",
+      agora,
+    });
+
+    expect(resultado).toEqual({
+      paymentStatus: "APPROVED",
+      enrollmentStatus: "ACTIVE",
+      alreadyProcessed: true,
+    });
+
+    expect(mocks.localizarPagamentoNotificado).toHaveBeenCalledTimes(2);
+
+    expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
+
+    expect(mocks.buscarOcorrenciaFinanceira).not.toHaveBeenCalled();
+  });
+
+  it("rejeita conflito concorrente quando pagamento continua pendente", async () => {
+    const erroConcorrencia = Object.assign(
+      new Error("O pagamento não está disponível para aprovação."),
+      { statusCode: 409 },
+    );
+
+    mocks.registrarPagamentoAprovado.mockRejectedValue(erroConcorrencia);
+
+    mocks.localizarPagamentoNotificado
+      .mockResolvedValueOnce(pagamento)
+      .mockResolvedValueOnce(pagamento);
+
+    await expect(
+      processarWebhookPagamento({
+        orderId: "order-456",
+        agora,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "O pagamento não está disponível para aprovação.",
+    });
+
+    expect(mocks.localizarPagamentoNotificado).toHaveBeenCalledTimes(2);
+    expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
+  });
+
+  it("rejeita recuperação concorrente com transação divergente", async () => {
+    const erroConcorrencia = Object.assign(
+      new Error("O pagamento não está disponível para aprovação."),
+      { statusCode: 409 },
+    );
+
+    const pagamentoDivergente = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: "999",
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "ACTIVE",
+      },
+    };
+
+    mocks.registrarPagamentoAprovado.mockRejectedValue(erroConcorrencia);
+
+    mocks.localizarPagamentoNotificado
+      .mockResolvedValueOnce(pagamento)
+      .mockResolvedValueOnce(pagamentoDivergente);
+
+    mocks.verificarPagamentoJaProcessado.mockImplementation(
+      ({ pagamento: pagamentoVerificado, providerPaymentId }) =>
+        pagamentoVerificado.status === "APPROVED" &&
+        pagamentoVerificado.providerPaymentId === providerPaymentId,
+    );
+
+    await expect(
+      processarWebhookPagamento({
+        orderId: "order-456",
+        agora,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "O pagamento não está disponível para aprovação.",
+    });
+
+    expect(mocks.localizarPagamentoNotificado).toHaveBeenCalledTimes(2);
+    expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
+    expect(mocks.buscarOcorrenciaFinanceira).not.toHaveBeenCalled();
+  });
+
   it("rejeita pagamento pendente com inscrição já ativa", async () => {
     mocks.localizarPagamentoNotificado.mockResolvedValue({
       ...pagamento,
@@ -856,5 +971,63 @@ describe("Orquestração do webhook do Mercado Pago", () => {
     });
 
     expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+  });
+
+  it("recupera aprovação concorrente com inscrição cancelada e ocorrência financeira", async () => {
+    const erroConcorrencia = Object.assign(
+      new Error("O pagamento não está disponível para aprovação."),
+      { statusCode: 409 },
+    );
+
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: transacao.providerPaymentId,
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "CANCELLED",
+      },
+    };
+
+    mocks.registrarPagamentoAprovado.mockRejectedValue(erroConcorrencia);
+
+    mocks.localizarPagamentoNotificado
+      .mockResolvedValueOnce(pagamento)
+      .mockResolvedValueOnce(pagamentoAprovado);
+
+    mocks.verificarPagamentoJaProcessado.mockImplementation(
+      ({ pagamento: atual, providerPaymentId }) =>
+        atual.status === "APPROVED" &&
+        atual.providerPaymentId === providerPaymentId,
+    );
+
+    mocks.buscarOcorrenciaFinanceira.mockResolvedValue({
+      type: "ENROLLMENT_CANCELLED",
+      status: "OPEN",
+    });
+
+    const resultado = await processarWebhookPagamento({
+      orderId: "order-456",
+      agora,
+    });
+
+    expect(resultado).toEqual({
+      paymentStatus: "APPROVED",
+      enrollmentStatus: "CANCELLED",
+      incidentType: "ENROLLMENT_CANCELLED",
+      alreadyProcessed: true,
+    });
+
+    expect(mocks.buscarOcorrenciaFinanceira).toHaveBeenCalledWith({
+      paymentId: pagamento.id,
+      providerPaymentId: transacao.providerPaymentId,
+      types: [
+        "ENROLLMENT_CONFLICT",
+        "ENROLLMENT_EXPIRED",
+        "ENROLLMENT_CANCELLED",
+      ],
+    });
+
+    expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
   });
 });

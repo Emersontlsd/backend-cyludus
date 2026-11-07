@@ -147,12 +147,100 @@ export async function processarWebhookPagamento({
   }
 
   // aprova o pagamento e ativa a inscricao na mesma transacao
-  const resultado = await registrarPagamentoAprovado({
-    pagamento,
-    transacao,
-    dataAprovacao,
-    agora,
-  });
+  let resultado;
+
+  try {
+    resultado = await registrarPagamentoAprovado({
+      pagamento,
+      transacao,
+      dataAprovacao,
+      agora
+    });
+  } catch (erro) {
+    // recupera somente o conflito conhecido da aprovação concorrente
+    const conflitoConcorrente =
+      erro?.statusCode === 409 &&
+      (
+        erro.message === "O pagamento não está disponível para aprovação." ||
+        erro.message === "O pagamento já foi aprovado e não pode ser processado novamente."
+      );
+
+      if (!conflitoConcorrente) {
+        throw erro;
+      }
+
+      // consulta novamente o estado persistido após o conflito
+      const pagamentoAtual = await localizarPagamentoNotificado({ order });
+
+      // garante que a Order continua vinculada ao mesmo pagamento
+      if (
+        !pagamentoAtual ||
+        pagamentoAtual.id !== pagamento.id ||
+        pagamentoAtual.enrollmentId !== pagamento.enrollmentId ||
+        pagamentoAtual.providerOrderId !== pagamento.providerOrderId
+      ) {
+        throw erro;
+      }
+
+      // revalida a identidade da Order, moeda e valor
+      validarVinculoOrderPagamento({
+        order,
+        pagamento: pagamentoAtual,
+      });
+
+      // reutiliza a proteção contra transações divergentes
+      const jaProcessado = verificarPagamentoJaProcessado({
+        pagamento: pagamentoAtual,
+        providerPaymentId: transacao.providerPaymentId,
+      });
+
+      if (!jaProcessado) {
+        throw erro;
+      }
+
+      if (pagamentoAtual.enrollment?.status === "ACTIVE") {
+        return {
+          paymentStatus: "APPROVED",
+          enrollmentStatus: "ACTIVE",
+          alreadyProcessed: true,
+        };
+      }
+
+      // inscrições não ativas exigem ocorrência financeira compativel
+      const tiposPermitidosPorStatus = {
+        PENDING: ["ENROLLMENT_CONFLICT"],
+        EXPIRED: ["ENROLLMENT_CONFLICT", "ENROLLMENT_EXPIRED"],
+        CANCELLED: ["ENROLLMENT_CANCELLED"],
+      };
+
+      const tiposPermitidos =
+        tiposPermitidosPorStatus[pagamentoAtual.enrollment?.status] ?? [];
+
+      if (tiposPermitidos.length === 0) {
+          throw erro;
+      }
+
+      const ocorrencia = await buscarOcorrenciaFinanceira({
+        paymentId: pagamentoAtual.id,
+        providerPaymentId: transacao.providerPaymentId,
+        types: [
+          "ENROLLMENT_CONFLICT",
+          "ENROLLMENT_EXPIRED",
+          "ENROLLMENT_CANCELLED",
+        ],
+      });
+
+      if (!ocorrencia || !tiposPermitidos.includes(ocorrencia.type)) {
+        throw erro;
+      }
+
+      return {
+        paymentStatus: "APPROVED",
+        enrollmentStatus: pagamentoAtual.enrollment.status,
+        incidentType: ocorrencia.type,
+        alreadyProcessed: true,
+      };
+  }
 
   return {
     ...resultado,
