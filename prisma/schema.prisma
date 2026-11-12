@@ -113,8 +113,6 @@ model Payment {
   @@index([status])
 }
 
-
-
 model PaymentIncident {
   id        String @id @default(uuid())
   paymentId String
@@ -125,11 +123,19 @@ model PaymentIncident {
 
   providerPaymentId String?
 
-  detectedAt DateTime @default(now())
+  detectedAt DateTime  @default(now())
   resolvedAt DateTime?
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
   @@index([paymentId])
   @@index([status])
+}
+
+model ReconciliationCursor {
+  id          String    @id
+  lastId      String?
+  lockedBy    String?
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
 }

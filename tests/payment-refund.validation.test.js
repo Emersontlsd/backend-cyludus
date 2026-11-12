@@ -543,7 +543,13 @@ describe("Proteção contra dados incompletos", () => {
         pagamento,
         pagamentoMercadoPago,
       }),
-    ).toThrow("O reembolso total ainda não foi confirmado.");
+    ).toThrow(
+      expect.objectContaining({
+        message: "O reembolso total ainda não foi confirmado.",
+        statusCode: 422,
+        code: "REFUND_NOT_FULLY_CONFIRMED",
+      }),
+    );
   });
 
   it("rejeita divergência no valor acumulado do Payment", () => {

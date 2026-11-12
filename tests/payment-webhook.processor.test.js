@@ -7,6 +7,7 @@ import {
   validarVinculoOrderPagamento,
   validarPagamentoAprovadoNotificado,
   verificarPagamentoJaProcessado,
+  identificarNotificacaoReembolso,
 } from "../src/modules/payments/payment-webhook.processor.js";
 
 vi.mock("../src/config/prisma.ts", () => ({
@@ -355,5 +356,69 @@ describe("Processamento do webhook do Mercado Pago", () => {
     await expect(localizarPagamentoNotificado({ order })).rejects.toThrow(
       "A inscrição vinculada ao pagamento não foi encontrada.",
     );
+  });
+
+  describe("Identificação de notificações de reembolso", () => {
+    it("retorna false quando a Order não possui registros de reembolso", () => {
+      const order = {
+        transactions: {
+          payments: [],
+        },
+      };
+
+      expect(identificarNotificacaoReembolso({ order })).toBe(false);
+    });
+
+    it("retorna false quando a lista de reembolsos está vazia", () => {
+      const order = {
+        transactions: {
+          refunds: [],
+        },
+      };
+
+      expect(identificarNotificacaoReembolso({ order })).toBe(false);
+    });
+
+    it("identifica um reembolso aprovado", () => {
+      const order = {
+        transactions: {
+          refunds: [
+            {
+              id: "refund-123",
+              status: "approved",
+            },
+          ],
+        },
+      };
+
+      expect(identificarNotificacaoReembolso({ order })).toBe(true);
+    });
+
+    it("identifica um reembolso pendente sem considerá-lo aprovado", () => {
+      const order = {
+        transactions: {
+          refunds: [
+            {
+              id: "refund-456",
+              status: "pending",
+            },
+          ],
+        },
+      };
+
+      expect(identificarNotificacaoReembolso({ order })).toBe(true);
+    });
+
+    it("rejeita registros de reembolso em formato inválido", () => {
+      const order = {
+        transactions: {
+          refunds: "invalid",
+        },
+      };
+
+      expect(() => identificarNotificacaoReembolso({ order })).toThrow(
+        "Os registros de reembolso da Order são inválidos.",
+      );
+    });
   });
 });

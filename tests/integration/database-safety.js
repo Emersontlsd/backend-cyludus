@@ -23,7 +23,9 @@ export function exigirAutorizacaoEscrita() {
   }
 
   if (!["postgresql:", "postgres:"].includes(url.protocol)) {
-    throw new Error("O banco configurado não utiliza PostgreSQL.");
+    throw new Error(
+      "O banco configurado não utiliza PostgreSQL.",
+    );
   }
 
   if (!["localhost", "127.0.0.1"].includes(url.hostname)) {

@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   validarPrazoAprovacaoMercadoPago: vi.fn(),
   registrarPagamentoAprovado: vi.fn(),
   buscarOcorrenciaFinanceira: vi.fn(),
+  identificarNotificacaoReembolso: vi.fn(),
+  validarReembolsoTotalMercadoPago: vi.fn(),
+  registrarPagamentoReembolsado: vi.fn(),
 }));
 
 vi.mock("../src/modules/payments/payment-webhook.processor.js", () => ({
@@ -19,6 +22,7 @@ vi.mock("../src/modules/payments/payment-webhook.processor.js", () => ({
   validarVinculoOrderPagamento: mocks.validarVinculoOrderPagamento,
   validarPagamentoAprovadoNotificado: mocks.validarPagamentoAprovadoNotificado,
   verificarPagamentoJaProcessado: mocks.verificarPagamentoJaProcessado,
+  identificarNotificacaoReembolso: mocks.identificarNotificacaoReembolso,
 }));
 
 vi.mock("../src/modules/payments/mercadopago-order.service.js", () => ({
@@ -36,6 +40,14 @@ vi.mock("../src/modules/payments/payment-webhook.persistence.js", () => ({
 
 vi.mock("../src/modules/payments/payment-incident.service.js", () => ({
   buscarOcorrenciaFinanceira: mocks.buscarOcorrenciaFinanceira,
+}));
+
+vi.mock("../src/modules/payments/payment-refund.validation.js", () => ({
+  validarReembolsoTotalMercadoPago: mocks.validarReembolsoTotalMercadoPago,
+}));
+
+vi.mock("../src/modules/payments/payment-refund.persistence.js", () => ({
+  registrarPagamentoReembolsado: mocks.registrarPagamentoReembolsado,
 }));
 
 import { processarWebhookPagamento } from "../src/modules/payments/payment-webhook.orchestrator.js";
@@ -75,6 +87,19 @@ describe("Orquestração do webhook do Mercado Pago", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+
+    mocks.identificarNotificacaoReembolso.mockReturnValue(false);
+
+    mocks.validarReembolsoTotalMercadoPago.mockReturnValue({
+      providerPaymentId: "789",
+      valorReembolsado: "149.90",
+    });
+
+    mocks.registrarPagamentoReembolsado.mockResolvedValue({
+      paymentStatus: "REFUNDED",
+      incidentType: "PAYMENT_REFUNDED",
+      alreadyProcessed: false,
+    });
 
     mocks.consultarPedidoNotificado.mockResolvedValue(order);
     mocks.localizarPagamentoNotificado.mockResolvedValue(pagamento);
@@ -1029,5 +1054,248 @@ describe("Orquestração do webhook do Mercado Pago", () => {
     });
 
     expect(mocks.registrarPagamentoAprovado).toHaveBeenCalledOnce();
+  });
+
+  it("registra reembolso integral confirmado sem alterar a inscrição", async () => {
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: "789",
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "ACTIVE",
+      },
+    };
+
+    const orderReembolsada = {
+      ...order,
+      transactions: {
+        refunds: [
+          {
+            id: "refund-123",
+            status: "approved",
+            amount: "149.90",
+          },
+        ],
+      },
+    };
+
+    mocks.consultarPedidoNotificado.mockResolvedValue(orderReembolsada);
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoAprovado);
+    mocks.identificarNotificacaoReembolso.mockReturnValue(true);
+
+    const resultado = await processarWebhookPagamento({
+      orderId: "order-456",
+      agora,
+    });
+
+    expect(mocks.consultarPagamentoMercadoPago).toHaveBeenCalledWith({
+      id: "789",
+    });
+
+    expect(mocks.validarReembolsoTotalMercadoPago).toHaveBeenCalledWith({
+      order: orderReembolsada,
+      pagamento: pagamentoAprovado,
+      pagamentoMercadoPago: pagamentoConsultado,
+    });
+
+    expect(mocks.registrarPagamentoReembolsado).toHaveBeenCalledWith({
+      pagamento: pagamentoAprovado,
+      providerPaymentId: "789",
+      agora,
+    });
+
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+    expect(mocks.validarPagamentoAprovadoNotificado).not.toHaveBeenCalled();
+
+    expect(resultado).toEqual({
+      paymentStatus: "REFUNDED",
+      incidentType: "PAYMENT_REFUNDED",
+      enrollmentStatus: "ACTIVE",
+      alreadyProcessed: false,
+    });
+  });
+
+  it("reconhece reembolso integral já processado", async () => {
+    const pagamentoReembolsado = {
+      ...pagamento,
+      status: "REFUNDED",
+      providerPaymentId: "789",
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "ACTIVE",
+      },
+    };
+
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoReembolsado);
+    mocks.identificarNotificacaoReembolso.mockReturnValue(true);
+
+    mocks.registrarPagamentoReembolsado.mockResolvedValue({
+      paymentStatus: "REFUNDED",
+      incidentType: "PAYMENT_REFUNDED",
+      alreadyProcessed: true,
+      incidentAlreadyExists: true,
+    });
+
+    const resultado = await processarWebhookPagamento({
+      orderId: "order-456",
+      agora,
+    });
+
+    expect(mocks.registrarPagamentoReembolsado).toHaveBeenCalledOnce();
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+
+    expect(resultado).toEqual({
+      paymentStatus: "REFUNDED",
+      incidentType: "PAYMENT_REFUNDED",
+      enrollmentStatus: "ACTIVE",
+      alreadyProcessed: true,
+      incidentAlreadyExists: true,
+    });
+  });
+
+  it("não registra reembolso parcial como integral", async () => {
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: "789",
+    };
+
+    const orderComReembolso = {
+      ...order,
+      transactions: {
+        refunds: [
+          {
+            id: "refund-parcial",
+            status: "approved",
+            amount: "50.00",
+          },
+        ],
+      },
+    };
+
+    const erro = Object.assign(
+      new Error("O reembolso total ainda não foi confirmado."),
+      {
+        statusCode: 422,
+        code: "REFUND_NOT_FULLY_CONFIRMED",
+      },
+    );
+
+    mocks.consultarPedidoNotificado.mockResolvedValue(orderComReembolso);
+
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoAprovado);
+
+    mocks.identificarNotificacaoReembolso.mockReturnValue(true);
+
+    mocks.validarReembolsoTotalMercadoPago.mockImplementation(() => {
+      throw erro;
+    });
+
+    await expect(
+      processarWebhookPagamento({
+        orderId: "order-456",
+        agora,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: "REFUND_NOT_FULLY_CONFIRMED",
+      message: "O reembolso total ainda não foi confirmado.",
+    });
+
+    expect(mocks.registrarPagamentoReembolsado).not.toHaveBeenCalled();
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+  });
+
+  it("não registra reembolso pendente como integral", async () => {
+    const pagamentoAprovado = {
+      ...pagamento,
+      status: "APPROVED",
+      providerPaymentId: "789",
+    };
+
+    const orderComReembolsoPendente = {
+      ...order,
+      transactions: {
+        refunds: [
+          {
+            id: "refund-pendente",
+            status: "pending",
+            amount: "149.90",
+          },
+        ],
+      },
+    };
+
+    const erro = Object.assign(
+      new Error("O reembolso total ainda não foi confirmado."),
+      {
+        statusCode: 422,
+        code: "REFUND_NOT_FULLY_CONFIRMED",
+      },
+    );
+
+    mocks.consultarPedidoNotificado.mockResolvedValue(
+      orderComReembolsoPendente,
+    );
+
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoAprovado);
+
+    mocks.identificarNotificacaoReembolso.mockReturnValue(true);
+
+    mocks.validarReembolsoTotalMercadoPago.mockImplementation(() => {
+      throw erro;
+    });
+
+    await expect(
+      processarWebhookPagamento({
+        orderId: "order-456",
+        agora,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: "REFUND_NOT_FULLY_CONFIRMED",
+      message: "O reembolso total ainda não foi confirmado.",
+    });
+
+    expect(mocks.registrarPagamentoReembolsado).not.toHaveBeenCalled();
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+  });
+
+  it("não reaprova pagamento reembolsado ao receber webhook antigo", async () => {
+    const pagamentoReembolsado = {
+      ...pagamento,
+      status: "REFUNDED",
+      providerPaymentId: "789",
+      refundedAt: new Date("2026-11-04T15:00:00.000Z"),
+      enrollment: {
+        ...pagamento.enrollment,
+        status: "ACTIVE",
+      },
+    };
+
+    mocks.localizarPagamentoNotificado.mockResolvedValue(pagamentoReembolsado);
+
+    // Simula uma notificação antiga de aprovação,
+    // sem registros de reembolso na Order.
+    mocks.identificarNotificacaoReembolso.mockReturnValue(false);
+
+    await expect(
+      processarWebhookPagamento({
+        orderId: "order-456",
+        agora,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "O pagamento não está disponível para aprovação.",
+    });
+
+    // Nenhuma operação de persistência pode ser executada.
+    expect(mocks.registrarPagamentoAprovado).not.toHaveBeenCalled();
+
+    expect(mocks.registrarPagamentoReembolsado).not.toHaveBeenCalled();
+
+    // A inscrição não deve ser processada novamente.
+    expect(mocks.validarPrazoAprovacaoMercadoPago).not.toHaveBeenCalled();
   });
 });

@@ -110,3 +110,22 @@ export function verificarPagamentoJaProcessado({
 
   return true;
 }
+
+export function identificarNotificacaoReembolso({ order }) {
+  const reembolsos = order?.transactions?.refunds;
+
+  if (reembolsos === undefined || reembolsos === null) {
+    return false;
+  }
+
+  if (!Array.isArray(reembolsos)) {
+    const erro = new Error(
+      "Os registros de reembolso da Order são inválidos.",
+    );
+
+    erro.statusCode = 422;
+    throw erro;
+  }
+
+  return reembolsos.length > 0;
+}

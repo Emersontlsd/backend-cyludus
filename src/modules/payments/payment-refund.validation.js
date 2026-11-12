@@ -179,7 +179,11 @@ export function validarReembolsoTotalMercadoPago({
     acumuladoOrder !== valorOriginal ||
     acumuladoPagamento !== valorOriginal
   ) {
-    throw criarErro("O reembolso total ainda não foi confirmado.");
+    const erro = criarErro("O reembolso total ainda não foi confirmado.");
+
+    erro.code = "REFUND_NOT_FULLY_CONFIRMED";
+
+    throw erro;
   }
 
   return {
