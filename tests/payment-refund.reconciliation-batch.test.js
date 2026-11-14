@@ -1,3 +1,4 @@
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -28,9 +29,53 @@ describe("Reconciliação de reembolsos em lotes", () => {
     providerPaymentId: `provider-${id}`,
   });
 
+  const textoSql = (strings) => strings.join("?");
+
+  const ehAquisicao = (sql) =>
+    sql.includes('UPDATE "ReconciliationCursor"') &&
+    /SET\s+"lockedBy"\s*=\s*\?/.test(sql);
+
+  const ehRenovacao = (sql) =>
+    sql.includes('UPDATE "ReconciliationCursor"') &&
+    sql.includes('"lockedUntil" = clock_timestamp()') &&
+    !ehAquisicao(sql);
+
+  const ehLeituraCursor = (sql) =>
+    sql.includes('SELECT "lastId"') &&
+    sql.includes('FROM "ReconciliationCursor"');
+
+  const ehAtualizacaoCursor = (sql) =>
+    sql.includes('UPDATE "ReconciliationCursor"') &&
+    sql.includes('SET "lastId" = ?');
+
   let db;
   let reconciliarPagamento;
   let registrarErro;
+
+  const consultas = (predicado) =>
+    db.$queryRaw.mock.calls.filter(([strings]) =>
+      predicado(textoSql(strings)),
+    );
+
+  const atualizacoesCursor = () =>
+    consultas(ehAtualizacaoCursor);
+
+  const renovacoes = () =>
+    consultas(ehRenovacao);
+
+  const alterarRespostaSql = (predicado, resposta) => {
+    const original = db.$queryRaw.getMockImplementation();
+
+    db.$queryRaw.mockImplementation((strings, ...valores) => {
+      if (predicado(textoSql(strings))) {
+        return typeof resposta === "function"
+          ? resposta(strings, ...valores)
+          : Promise.resolve(resposta);
+      }
+
+      return original(strings, ...valores);
+    });
+  };
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -42,8 +87,27 @@ describe("Reconciliação de reembolsos em lotes", () => {
       reconciliationCursor: {
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findFirst: vi.fn().mockResolvedValue({ lastId: null }),
       },
+      $queryRaw: vi.fn(async (strings, ...valores) => {
+        const sql = textoSql(strings);
+        const expiraEm = new Date("2026-11-10T15:05:00.000Z");
+
+        if (ehAquisicao(sql) || ehRenovacao(sql)) {
+          return [{ lockedUntil: expiraEm }];
+        }
+
+        if (ehLeituraCursor(sql)) {
+          return [{ lastId: null }];
+        }
+
+        if (ehAtualizacaoCursor(sql)) {
+          return [{ lastId: valores[0] }];
+        }
+
+        throw new Error(
+          `Consulta SQL inesperada no teste: ${sql}`,
+        );
+      }),
     };
 
     reconciliarPagamento = vi.fn();
@@ -71,18 +135,14 @@ describe("Reconciliação de reembolsos em lotes", () => {
   });
 
   it("classifica os resultados da reconciliação", async () => {
-    const pagamentos = [
+    db.payment.findMany.mockResolvedValue([
       criarPagamento("001"),
       criarPagamento("002"),
       criarPagamento("003"),
-    ];
-
-    db.payment.findMany.mockResolvedValue(pagamentos);
+    ]);
 
     reconciliarPagamento
-      .mockResolvedValueOnce({
-        reconciled: true,
-      })
+      .mockResolvedValueOnce({ reconciled: true })
       .mockResolvedValueOnce({
         reconciled: false,
         refundStatus: "NO_REFUND",
@@ -117,9 +177,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
     reconciliarPagamento
       .mockRejectedValueOnce(new Error("Falha no Mercado Pago"))
-      .mockResolvedValueOnce({
-        reconciled: true,
-      });
+      .mockResolvedValueOnce({ reconciled: true });
 
     const resultado = await reconciliarReembolsosEmLote({
       db,
@@ -155,15 +213,15 @@ describe("Reconciliação de reembolsos em lotes", () => {
     expect(db.payment.findMany).toHaveBeenCalledTimes(1);
 
     expect(db.payment.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        take: 2,
-      }),
+      expect.objectContaining({ take: 2 }),
     );
   });
 
   it("utiliza paginação por ID sem skip", async () => {
-    const primeiraPagina = Array.from({ length: 50 }, (_, indice) =>
-      criarPagamento(String(indice + 1).padStart(3, "0")),
+    const primeiraPagina = Array.from(
+      { length: 50 },
+      (_, indice) =>
+        criarPagamento(String(indice + 1).padStart(3, "0")),
     );
 
     db.payment.findMany
@@ -188,13 +246,9 @@ describe("Reconciliação de reembolsos em lotes", () => {
       2,
       expect.objectContaining({
         where: expect.objectContaining({
-          id: {
-            gt: "050",
-          },
+          id: { gt: "050" },
         }),
-        orderBy: {
-          id: "asc",
-        },
+        orderBy: { id: "asc" },
       }),
     );
   });
@@ -208,7 +262,9 @@ describe("Reconciliação de reembolsos em lotes", () => {
           reconciliarPagamento,
           registrarErro,
         }),
-      ).rejects.toThrow("O limite deve ser um número inteiro entre 1 e 500.");
+      ).rejects.toThrow(
+        "O limite deve ser um número inteiro entre 1 e 500.",
+      );
     }
 
     expect(db.payment.findMany).not.toHaveBeenCalled();
@@ -229,7 +285,9 @@ describe("Reconciliação de reembolsos em lotes", () => {
   });
 
   it("contabiliza resultados inesperados como erro", async () => {
-    db.payment.findMany.mockResolvedValue([criarPagamento("001")]);
+    db.payment.findMany.mockResolvedValue([
+      criarPagamento("001"),
+    ]);
 
     reconciliarPagamento.mockResolvedValue({
       reconciled: false,
@@ -247,9 +305,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
   });
 
   it("não processa pagamentos quando outra execução possui o bloqueio", async () => {
-    db.reconciliationCursor.updateMany.mockResolvedValueOnce({
-      count: 0,
-    });
+    alterarRespostaSql(ehAquisicao, []);
 
     const resultado = await reconciliarReembolsosEmLote({
       db,
@@ -268,14 +324,15 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
     expect(db.payment.findMany).not.toHaveBeenCalled();
     expect(reconciliarPagamento).not.toHaveBeenCalled();
-
-    expect(db.reconciliationCursor.findFirst).not.toHaveBeenCalled();
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(db.reconciliationCursor.updateMany)
+      .not.toHaveBeenCalled();
   });
 
   it("retoma a reconciliação a partir do cursor persistido", async () => {
-    db.reconciliationCursor.findFirst.mockResolvedValueOnce({
-      lastId: "050",
-    });
+    alterarRespostaSql(ehLeituraCursor, [
+      { lastId: "050" },
+    ]);
 
     db.payment.findMany.mockResolvedValueOnce([
       criarPagamento("051"),
@@ -299,32 +356,24 @@ describe("Reconciliação de reembolsos em lotes", () => {
     expect(db.payment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: {
-            gt: "050",
-          },
+          id: { gt: "050" },
         }),
-        orderBy: {
-          id: "asc",
-        },
+        orderBy: { id: "asc" },
         take: 2,
       }),
     );
 
     expect(reconciliarPagamento).toHaveBeenCalledTimes(2);
 
-    expect(db.reconciliationCursor.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          lastId: "052",
-        },
-      }),
-    );
+    expect(
+      atualizacoesCursor().map(([, ultimoId]) => ultimoId),
+    ).toContain("052");
   });
 
   it("reinicia o cursor ao alcançar o final da varredura", async () => {
-    db.reconciliationCursor.findFirst.mockResolvedValueOnce({
-      lastId: "050",
-    });
+    alterarRespostaSql(ehLeituraCursor, [
+      { lastId: "050" },
+    ]);
 
     db.payment.findMany.mockResolvedValueOnce([
       criarPagamento("051"),
@@ -346,22 +395,12 @@ describe("Reconciliação de reembolsos em lotes", () => {
     expect(resultado.verificados).toBe(2);
     expect(resultado.semReembolso).toBe(2);
 
-    expect(db.reconciliationCursor.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          lastId: "052",
-        },
-      }),
+    const valores = atualizacoesCursor().map(
+      ([, ultimoId]) => ultimoId,
     );
 
-    expect(db.reconciliationCursor.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          lastId: null,
-        },
-      }),
-    );
-
+    expect(valores).toContain("052");
+    expect(valores).toContain(null);
     expect(reconciliarPagamento).toHaveBeenCalledTimes(2);
   });
 
@@ -384,7 +423,6 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
     reconciliarPagamento.mockImplementationOnce(async () => {
       avisarInicio();
-
       return pagamentoPendente;
     });
 
@@ -397,10 +435,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
     await pagamentoIniciado;
 
-    // Simula a perda do bloqueio na próxima verificação.
-    db.reconciliationCursor.updateMany.mockResolvedValueOnce({
-      count: 0,
-    });
+    alterarRespostaSql(ehRenovacao, []);
 
     resolverPagamento({
       reconciled: false,
@@ -412,13 +447,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
     );
 
     expect(reconciliarPagamento).toHaveBeenCalledTimes(1);
-
-    const atualizacoesCursor =
-      db.reconciliationCursor.updateMany.mock.calls.filter(([argumentos]) =>
-        Object.prototype.hasOwnProperty.call(argumentos.data, "lastId"),
-      );
-
-    expect(atualizacoesCursor).toHaveLength(0);
+    expect(atualizacoesCursor()).toHaveLength(0);
   });
 
   it("preserva o erro original quando a liberação do bloqueio também falha", async () => {
@@ -427,16 +456,18 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
     db.payment.findMany.mockRejectedValueOnce(erroOriginal);
 
-    db.reconciliationCursor.updateMany.mockImplementation(async ({ data }) => {
-      if (
-        Object.prototype.hasOwnProperty.call(data, "lockedBy") &&
-        data.lockedBy === null
-      ) {
-        throw erroLiberacao;
-      }
+    db.reconciliationCursor.updateMany.mockImplementation(
+      async ({ data }) => {
+        if (
+          Object.prototype.hasOwnProperty.call(data, "lockedBy") &&
+          data.lockedBy === null
+        ) {
+          throw erroLiberacao;
+        }
 
-      return { count: 1 };
-    });
+        return { count: 1 };
+      },
+    );
 
     await expect(
       reconciliarReembolsosEmLote({
@@ -456,7 +487,9 @@ describe("Reconciliação de reembolsos em lotes", () => {
     vi.useFakeTimers();
 
     try {
-      db.payment.findMany.mockResolvedValueOnce([criarPagamento("001")]);
+      db.payment.findMany.mockResolvedValueOnce([
+        criarPagamento("001"),
+      ]);
 
       let avisarInicio;
       let concluirPagamento;
@@ -483,29 +516,15 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
       await pagamentoIniciado;
 
-      const renovacoesAntes =
-        db.reconciliationCursor.updateMany.mock.calls.filter(
-          ([argumentos]) =>
-            Object.prototype.hasOwnProperty.call(
-              argumentos.data,
-              "lockedUntil",
-            ) &&
-            !Object.prototype.hasOwnProperty.call(argumentos.data, "lockedBy"),
-        ).length;
+      const renovacoesAntes = renovacoes().length;
 
       await vi.advanceTimersByTimeAsync(60_000);
 
-      const renovacoesDepois =
-        db.reconciliationCursor.updateMany.mock.calls.filter(
-          ([argumentos]) =>
-            Object.prototype.hasOwnProperty.call(
-              argumentos.data,
-              "lockedUntil",
-            ) &&
-            !Object.prototype.hasOwnProperty.call(argumentos.data, "lockedBy"),
-        ).length;
+      const renovacoesDepois = renovacoes().length;
 
-      expect(renovacoesDepois).toBeGreaterThan(renovacoesAntes);
+      expect(renovacoesDepois).toBeGreaterThan(
+        renovacoesAntes,
+      );
 
       concluirPagamento({
         reconciled: false,
@@ -555,10 +574,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
       await pagamentoIniciado;
 
-      // A próxima renovação automática perde o bloqueio.
-      db.reconciliationCursor.updateMany.mockResolvedValueOnce({
-        count: 0,
-      });
+      alterarRespostaSql(ehRenovacao, []);
 
       await vi.advanceTimersByTimeAsync(60_000);
 
@@ -572,13 +588,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
       );
 
       expect(reconciliarPagamento).toHaveBeenCalledTimes(1);
-
-      const atualizacoesCursor =
-        db.reconciliationCursor.updateMany.mock.calls.filter(([argumentos]) =>
-          Object.prototype.hasOwnProperty.call(argumentos.data, "lastId"),
-        );
-
-      expect(atualizacoesCursor).toHaveLength(0);
+      expect(atualizacoesCursor()).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }
@@ -618,9 +628,13 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
       await pagamentoIniciado;
 
-      const erroBanco = new Error("Falha de conexão durante a renovação");
+      const erroBanco = new Error(
+        "Falha de conexão durante a renovação",
+      );
 
-      db.reconciliationCursor.updateMany.mockRejectedValueOnce(erroBanco);
+      alterarRespostaSql(ehRenovacao, () =>
+        Promise.reject(erroBanco),
+      );
 
       await vi.advanceTimersByTimeAsync(60_000);
 
@@ -632,13 +646,7 @@ describe("Reconciliação de reembolsos em lotes", () => {
       await expect(execucao).rejects.toBe(erroBanco);
 
       expect(reconciliarPagamento).toHaveBeenCalledTimes(1);
-
-      const atualizacoesCursor =
-        db.reconciliationCursor.updateMany.mock.calls.filter(([argumentos]) =>
-          Object.prototype.hasOwnProperty.call(argumentos.data, "lastId"),
-        );
-
-      expect(atualizacoesCursor).toHaveLength(0);
+      expect(atualizacoesCursor()).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }
@@ -648,7 +656,9 @@ describe("Reconciliação de reembolsos em lotes", () => {
     vi.useFakeTimers();
 
     try {
-      db.payment.findMany.mockResolvedValueOnce([criarPagamento("001")]);
+      db.payment.findMany.mockResolvedValueOnce([
+        criarPagamento("001"),
+      ]);
 
       let avisarInicio;
       let concluirPagamento;
@@ -680,38 +690,32 @@ describe("Reconciliação de reembolsos em lotes", () => {
 
       await pagamentoIniciado;
 
-      // O heartbeat inicia uma renovação que permanece pendente.
-      db.reconciliationCursor.updateMany.mockImplementationOnce(
+      alterarRespostaSql(
+        ehRenovacao,
         () => renovacaoPendente,
       );
 
       await vi.advanceTimersByTimeAsync(60_000);
 
-      // O pagamento termina enquanto a renovação está pendente.
       concluirPagamento({
         reconciled: false,
         refundStatus: "NO_REFUND",
       });
 
-      // Permite que a verificação manual alcance a renovação pendente.
       await Promise.resolve();
       await Promise.resolve();
 
-      const renovacoesAntesDeConcluir =
-        db.reconciliationCursor.updateMany.mock.calls.filter(
-          ([argumentos]) =>
-            Object.prototype.hasOwnProperty.call(
-              argumentos.data,
-              "lockedUntil",
-            ) &&
-            !Object.prototype.hasOwnProperty.call(argumentos.data, "lockedBy"),
-        );
+      const renovacoesAntesDeConcluir = renovacoes();
 
-      // Uma renovação inicial e uma do heartbeat.
-      // A verificação manual não deve iniciar uma terceira.
       expect(renovacoesAntesDeConcluir).toHaveLength(2);
 
-      concluirRenovacao({ count: 1 });
+      concluirRenovacao([
+        {
+          lockedUntil: new Date(
+            "2026-11-10T15:05:00.000Z",
+          ),
+        },
+      ]);
 
       const resultado = await execucao;
 

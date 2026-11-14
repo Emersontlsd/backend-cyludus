@@ -64,7 +64,7 @@ describe("Integração do cursor de reconciliação com PostgreSQL", () => {
           identificador: identificadorInvalido,
           ultimoId: "pagamento-invalido",
         }),
-      ).rejects.toThrow("Não foi possível atualizar o cursor");
+      ).rejects.toThrow("O bloqueio de reconciliação foi perdido.");
 
       const renovacaoValida = await renovarBloqueioReconciliacao({
         db: prisma,
@@ -129,81 +129,79 @@ describe("Integração do cursor de reconciliação com PostgreSQL", () => {
     }
   });
 
-  it("recupera um bloqueio expirado sem permitir alterações do proprietário antigo", async () => {
-    const cursorId = `TEST_REFUND_EXPIRED_${randomUUID()}`;
+it("recupera um bloqueio expirado usando o relógio do PostgreSQL", async () => {
+  const cursorId = `TEST_REFUND_EXPIRED_${randomUUID()}`;
 
-    const inicio = new Date();
-    const depoisDaExpiracao = new Date(inicio.getTime() + 2_000);
+  try {
+    const primeira = await adquirirBloqueioReconciliacao({
+      db: prisma,
+      cursorId,
+      duracaoMs: 1_000,
+    });
 
-    try {
-      const primeira = await adquirirBloqueioReconciliacao({
-        db: prisma,
-        cursorId,
-        duracaoMs: 1_000,
-        agora: inicio,
-      });
+    expect(primeira.adquirido).toBe(true);
 
-      expect(primeira.adquirido).toBe(true);
+    // Expira o bloqueio diretamente no PostgreSQL,
+    // sem alterar o relógio da aplicação.
+    await prisma.$executeRaw`
+      UPDATE "ReconciliationCursor"
+      SET "lockedUntil" = clock_timestamp() - INTERVAL '1 second'
+      WHERE "id" = ${cursorId}
+        AND "lockedBy" = ${primeira.identificador}
+    `;
 
-      // Simula a passagem do tempo sem aguardar realmente.
-      const segunda = await adquirirBloqueioReconciliacao({
-        db: prisma,
-        cursorId,
-        duracaoMs: 300_000,
-        agora: depoisDaExpiracao,
-      });
+    const segunda = await adquirirBloqueioReconciliacao({
+      db: prisma,
+      cursorId,
+      duracaoMs: 300_000,
+    });
 
-      expect(segunda.adquirido).toBe(true);
-      expect(segunda.identificador).not.toBe(primeira.identificador);
+    expect(segunda.adquirido).toBe(true);
+    expect(segunda.identificador).not.toBe(primeira.identificador);
 
-      // A execução antiga não pode renovar o bloqueio.
-      const renovacaoAntiga = await renovarBloqueioReconciliacao({
-        db: prisma,
-        cursorId,
-        identificador: primeira.identificador,
-        agora: depoisDaExpiracao,
-      });
+    const renovacaoAntiga = await renovarBloqueioReconciliacao({
+      db: prisma,
+      cursorId,
+      identificador: primeira.identificador,
+    });
 
-      expect(renovacaoAntiga.renovado).toBe(false);
+    expect(renovacaoAntiga.renovado).toBe(false);
 
-      // A execução antiga não pode atualizar o cursor.
-      await expect(
-        atualizarCursorReconciliacao({
-          db: prisma,
-          cursorId,
-          identificador: primeira.identificador,
-          ultimoId: "pagamento-antigo",
-          agora: depoisDaExpiracao,
-        }),
-      ).rejects.toThrow("Não foi possível atualizar o cursor");
-
-      // A execução antiga não pode liberar o novo bloqueio.
-      const liberacaoAntiga = await liberarBloqueioReconciliacao({
+    await expect(
+      atualizarCursorReconciliacao({
         db: prisma,
         cursorId,
         identificador: primeira.identificador,
-      });
+        ultimoId: "pagamento-antigo",
+      }),
+    ).rejects.toThrow("O bloqueio de reconciliação foi perdido.");
 
-      expect(liberacaoAntiga.liberado).toBe(false);
+    const liberacaoAntiga = await liberarBloqueioReconciliacao({
+      db: prisma,
+      cursorId,
+      identificador: primeira.identificador,
+    });
 
-      // O novo proprietário continua com a posse.
-      const registro = await prisma.reconciliationCursor.findUnique({
-        where: { id: cursorId },
-      });
+    expect(liberacaoAntiga.liberado).toBe(false);
 
-      expect(registro.lockedBy).toBe(segunda.identificador);
+    const registro = await prisma.reconciliationCursor.findUnique({
+      where: { id: cursorId },
+    });
 
-      const liberacaoNova = await liberarBloqueioReconciliacao({
-        db: prisma,
-        cursorId,
-        identificador: segunda.identificador,
-      });
+    expect(registro.lockedBy).toBe(segunda.identificador);
 
-      expect(liberacaoNova.liberado).toBe(true);
-    } finally {
-      await prisma.reconciliationCursor.deleteMany({
-        where: { id: cursorId },
-      });
-    }
-  });
+    const liberacaoNova = await liberarBloqueioReconciliacao({
+      db: prisma,
+      cursorId,
+      identificador: segunda.identificador,
+    });
+
+    expect(liberacaoNova.liberado).toBe(true);
+  } finally {
+    await prisma.reconciliationCursor.deleteMany({
+      where: { id: cursorId },
+    });
+  }
+});
+
 });
