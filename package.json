@@ -7,7 +7,8 @@
     "start": "tsx server.js",
     "dev": "tsx watch server.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "reconcile:refunds": "tsx scripts/run-reconcile-refunds.js"
   },
   "keywords": [],
   "author": "",
