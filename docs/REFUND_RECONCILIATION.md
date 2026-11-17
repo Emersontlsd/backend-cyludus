@@ -1,4 +1,3 @@
-
 # Reconciliação de reembolsos — Cyludus
 
 ## 1. Objetivo
@@ -78,14 +77,14 @@ O cursor permite continuar a varredura dos pagamentos entre execuções.
 
 O resumo contém:
 
-| Campo | Descrição |
-|---|---|
-| `verificados` | Pagamentos analisados |
-| `reembolsados` | Pagamentos reconciliados |
-| `semReembolso` | Pagamentos sem reembolso identificado |
-| `naoConfirmados` | Reembolsos não totalmente confirmados |
-| `erros` | Falhas individuais ou resultados inesperados |
-| `bloqueado` | Indica quando outra instância possui o bloqueio |
+| Campo            | Descrição                                       |
+| ---------------- | ----------------------------------------------- |
+| `verificados`    | Pagamentos analisados                           |
+| `reembolsados`   | Pagamentos reconciliados                        |
+| `semReembolso`   | Pagamentos sem reembolso identificado           |
+| `naoConfirmados` | Reembolsos não totalmente confirmados           |
+| `erros`          | Falhas individuais ou resultados inesperados    |
+| `bloqueado`      | Indica quando outra instância possui o bloqueio |
 
 O campo `bloqueado` aparece quando a execução não consegue adquirir o bloqueio.
 
@@ -104,6 +103,24 @@ O campo `bloqueado` aparece quando a execução não consegue adquirir o bloquei
 - Falha ao desconectar o Prisma.
 
 **Importante:** código `0` não significa necessariamente que algum pagamento tenha sido processado.
+
+### Identificadores de observabilidade
+
+O executor registra um identificador ao finalizar a execução, permitindo diferenciar os resultados nos logs.
+
+| Identificador                          | Significado                                                | Código de saída |
+| -------------------------------------- | ---------------------------------------------------------- | --------------- |
+| `REFUND_RECONCILIATION_COMPLETED`      | Reconciliação concluída sem erros contabilizados           | `0`             |
+| `REFUND_RECONCILIATION_SKIPPED_LOCKED` | Execução ignorada porque outra instância possui o bloqueio | `0`             |
+| `REFUND_RECONCILIATION_FAILED`         | Falha no processamento ou na desconexão do Prisma          | `1`             |
+
+Esses identificadores podem ser utilizados futuramente para monitoramento e alertas.
+
+**Importante:** uma execução ignorada por bloqueio não deve ser interpretada como processamento concluído.
+
+O identificador `REFUND_RECONCILIATION_FAILED` também é registrado quando a execução apresenta erros individuais, mesmo que outros pagamentos tenham sido processados com sucesso.
+
+A ausência de um identificador final pode indicar que o processo foi interrompido antes de concluir a execução.
 
 ## 9. Tratamento de falhas
 
@@ -163,15 +180,15 @@ Antes de implementar um agendador, definir:
 
 ## 13. Estado atual
 
-| Funcionalidade | Situação |
-|---|---|
-| Executor manual | Implementado |
-| Proteção por variável de ambiente | Implementada |
-| Bloqueio distribuído | Implementado |
-| Cursor persistido | Implementado |
-| Testes automatizados | Aprovados na última execução |
-| Execução financeira real | Não validada |
-| Agendamento automático | Não implementado |
+| Funcionalidade                    | Situação                     |
+| --------------------------------- | ---------------------------- |
+| Executor manual                   | Implementado                 |
+| Proteção por variável de ambiente | Implementada                 |
+| Bloqueio distribuído              | Implementado                 |
+| Cursor persistido                 | Implementado                 |
+| Testes automatizados              | Aprovados na última execução |
+| Execução financeira real          | Não validada                 |
+| Agendamento automático            | Não implementado             |
 
 ## 14. Recomendações para produção
 

@@ -9,6 +9,7 @@ export async function executarReconciliacao({
   registrarErro = console.error,
 } = {}) {
   let codigoSaida = 0;
+  let resultadoExecucao = "REFUND_RECONCILIATION_COMPLETED";
 
   try {
     registrarInfo("Iniciando reconciliação de reembolsos...");
@@ -16,6 +17,8 @@ export async function executarReconciliacao({
     const resumo = await reconciliar();
 
     if (resumo.bloqueado) {
+      resultadoExecucao = "REFUND_RECONCILIATION_SKIPPED_LOCKED";
+
       registrarInfo(
         "Reconciliação não executada: outra instância possui o bloqueio.",
       );
@@ -24,19 +27,30 @@ export async function executarReconciliacao({
 
       if (resumo.erros > 0) {
         codigoSaida = 1;
+        resultadoExecucao = "REFUND_RECONCILIATION_FAILED";
+
         registrarErro(`Reconciliação concluída com ${resumo.erros} erro(s).`);
       }
     }
   } catch (erro) {
     codigoSaida = 1;
+    resultadoExecucao = "REFUND_RECONCILIATION_FAILED";
+
     registrarErro("Falha na reconciliação de reembolsos:", erro);
   } finally {
     try {
       await desconectar();
     } catch (erro) {
       codigoSaida = 1;
+      resultadoExecucao = "REFUND_RECONCILIATION_FAILED";
+
       registrarErro("Falha ao desconectar o Prisma:", erro);
     }
+
+    const registrarResultado =
+      codigoSaida === 0 ? registrarInfo : registrarErro;
+
+    registrarResultado(resultadoExecucao);
   }
 
   return codigoSaida;

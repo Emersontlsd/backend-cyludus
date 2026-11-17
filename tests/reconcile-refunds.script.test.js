@@ -175,4 +175,88 @@ describe("Executor de reconciliação de reembolsos", () => {
     expect(codigo).toBe(1);
     expect(executar).toHaveBeenCalledOnce();
   });
+
+  it("registra identificador de conclusão quando não existem erros", async () => {
+    const registrarInfo = vi.fn();
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 2,
+        reembolsados: 1,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 0,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro,
+    });
+
+    expect(codigo).toBe(0);
+    expect(registrarInfo).toHaveBeenCalledWith(
+      "REFUND_RECONCILIATION_COMPLETED",
+    );
+    expect(registrarErro).not.toHaveBeenCalled();
+  });
+
+  it("registra identificador quando a execução é ignorada por bloqueio", async () => {
+    const registrarInfo = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        bloqueado: true,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    expect(codigo).toBe(0);
+    expect(registrarInfo).toHaveBeenCalledWith(
+      "REFUND_RECONCILIATION_SKIPPED_LOCKED",
+    );
+  });
+
+  it("registra identificador de falha quando existem erros individuais", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 2,
+        reembolsados: 1,
+        semReembolso: 0,
+        naoConfirmados: 0,
+        erros: 1,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    expect(codigo).toBe(1);
+    expect(registrarErro).toHaveBeenCalledWith("REFUND_RECONCILIATION_FAILED");
+  });
+
+  it("registra identificador de falha quando a desconexão falha", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 0,
+        reembolsados: 0,
+        naoConfirmados: 0,
+        semReembolso: 0,
+        erros: 0,
+      }),
+      desconectar: vi
+        .fn()
+        .mockRejectedValue(new Error("Falha simulada na desconexão")),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    expect(codigo).toBe(1);
+    expect(registrarErro).toHaveBeenCalledWith("REFUND_RECONCILIATION_FAILED");
+  });
 });
