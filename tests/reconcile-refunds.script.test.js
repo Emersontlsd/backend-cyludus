@@ -259,4 +259,140 @@ describe("Executor de reconciliação de reembolsos", () => {
     expect(codigo).toBe(1);
     expect(registrarErro).toHaveBeenCalledWith("REFUND_RECONCILIATION_FAILED");
   });
+
+  it("registra JSON estruturado quando a reconciliação termina com sucesso", async () => {
+    const registrarInfo = vi.fn();
+
+    const resumo = {
+      verificados: 5,
+      reembolsados: 2,
+      semReembolso: 3,
+      naoConfirmados: 0,
+      erros: 0,
+    };
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue(resumo),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    const registros = registrarInfo.mock.calls
+      .filter(([mensagem]) => typeof mensagem === "string")
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    expect(codigo).toBe(0);
+    expect(registros).toContainEqual({
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      status: "SUCCESS",
+      exitCode: 0,
+      timestamp: expect.any(String),
+      summary: resumo,
+    });
+
+    expect(Number.isNaN(Date.parse(registros[0].timestamp))).toBe(false);
+  });
+
+  it("registra JSON estruturado quando o bloqueio está ocupado", async () => {
+    const registrarInfo = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({ bloqueado: true }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    const registro = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .find((valor) => valor?.event === "REFUND_RECONCILIATION_SKIPPED_LOCKED");
+
+    expect(codigo).toBe(0);
+    expect(registro).toMatchObject({
+      event: "REFUND_RECONCILIATION_SKIPPED_LOCKED",
+      status: "SKIPPED",
+      exitCode: 0,
+    });
+  });
+
+  it("registra JSON estruturado quando existem erros individuais", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 3,
+        reembolsados: 1,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 1,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const registro = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .find((valor) => valor?.event === "REFUND_RECONCILIATION_FAILED");
+
+    expect(codigo).toBe(1);
+    expect(registro).toMatchObject({
+      event: "REFUND_RECONCILIATION_FAILED",
+      status: "FAILED",
+      exitCode: 1,
+      summary: {
+        verificados: 3,
+        erros: 1,
+      },
+    });
+  });
+
+  it("registra JSON estruturado quando a reconciliação lança exceção", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockRejectedValue(new Error("Falha simulada")),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const registro = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .find((valor) => valor?.event === "REFUND_RECONCILIATION_FAILED");
+
+    expect(codigo).toBe(1);
+    expect(registro).toMatchObject({
+      event: "REFUND_RECONCILIATION_FAILED",
+      status: "FAILED",
+      exitCode: 1,
+      summary: null,
+    });
+  });
 });

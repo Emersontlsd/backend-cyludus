@@ -10,11 +10,13 @@ export async function executarReconciliacao({
 } = {}) {
   let codigoSaida = 0;
   let resultadoExecucao = "REFUND_RECONCILIATION_COMPLETED";
+  let resumoExecucao = null;
 
   try {
     registrarInfo("Iniciando reconciliação de reembolsos...");
 
     const resumo = await reconciliar();
+    resumoExecucao = resumo;
 
     if (resumo.bloqueado) {
       resultadoExecucao = "REFUND_RECONCILIATION_SKIPPED_LOCKED";
@@ -51,6 +53,29 @@ export async function executarReconciliacao({
       codigoSaida === 0 ? registrarInfo : registrarErro;
 
     registrarResultado(resultadoExecucao);
+
+    const eventoEstruturado = {
+      event: resultadoExecucao,
+      status:
+        resultadoExecucao === "REFUND_RECONCILIATION_COMPLETED"
+          ? "SUCCESS"
+          : resultadoExecucao === "REFUND_RECONCILIATION_SKIPPED_LOCKED"
+            ? "SKIPPED"
+            : "FAILED",
+      exitCode: codigoSaida,
+      timestamp: new Date().toISOString(),
+      summary: resumoExecucao
+        ? {
+            verificados: resumoExecucao.verificados ?? 0,
+            reembolsados: resumoExecucao.reembolsados ?? 0,
+            semReembolso: resumoExecucao.semReembolso ?? 0,
+            naoConfirmados: resumoExecucao.naoConfirmados ?? 0,
+            erros: resumoExecucao.erros ?? 0,
+          }
+        : null,
+    };
+
+    registrarResultado(JSON.stringify(eventoEstruturado));
   }
 
   return codigoSaida;

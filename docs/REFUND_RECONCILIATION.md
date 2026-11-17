@@ -122,6 +122,58 @@ O identificador `REFUND_RECONCILIATION_FAILED` também é registrado quando a ex
 
 A ausência de um identificador final pode indicar que o processo foi interrompido antes de concluir a execução.
 
+### Logs estruturados em JSON
+
+Além das mensagens textuais, o executor registra um evento estruturado
+ao finalizar a execução.
+
+Exemplo:
+
+```json
+{
+  "event": "REFUND_RECONCILIATION_COMPLETED",
+  "status": "SUCCESS",
+  "exitCode": 0,
+  "timestamp": "2026-11-16T21:30:00.000Z",
+  "summary": {
+    "verificados": 5,
+    "reembolsados": 2,
+    "semReembolso": 3,
+    "naoConfirmados": 0,
+    "erros": 0
+  }
+}
+```
+
+O timestamp acima é ilustrativo. O executor utiliza a data e hora
+reais da execução, em formato ISO 8601 UTC.
+
+Os status possíveis são:
+
+- `SUCCESS`: processamento concluído sem erros.
+- `SKIPPED`: execução ignorada por bloqueio distribuído.
+- `FAILED`: processamento ou desconexão com falha.
+
+O campo `summary` contém contadores operacionais. Quando a reconciliação
+lança uma exceção antes de retornar um resumo, seu valor é `null`.
+
+Os eventos estruturados são registrados em stdout quando o código de
+saída é `0` e em stderr quando o código de saída é `1`.
+
+A execução não autorizada é bloqueada antes do carregamento do
+executor financeiro e não gera esse evento estruturado.
+
+### Monitoramento futuro
+
+Os eventos JSON poderão ser utilizados por ferramentas de monitoramento
+para identificar falhas e execuções ignoradas por bloqueio.
+
+Ainda não existem alertas automáticos nem agendamento da reconciliação.
+A ausência de um evento final também deverá ser considerada em um
+monitoramento futuro, pois pode indicar interrupção inesperada do processo.
+
+````
+
 ## 9. Tratamento de falhas
 
 Falhas individuais são registradas e contabilizadas.
@@ -159,7 +211,7 @@ Para executar todos os testes:
 
 ```powershell
 npm test
-```
+````
 
 Os testes automatizados utilizam simulações e não substituem uma validação operacional controlada.
 
