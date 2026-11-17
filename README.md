@@ -164,9 +164,44 @@ Os seguintes recursos ainda precisam ser desenvolvidos:
 - Upload e armazenamento de imagens.
 - Planos e regras de acesso.
 
-## Documentação da API
+## Documentação
+
+### API REST
 
 Consulte [`docs/API.md`](docs/API.md) para conhecer os endpoints, parâmetros, exemplos de requisições e respostas.
+
+### Reconciliação de reembolsos
+
+O backend possui um executor manual para reconciliar reembolsos de pagamentos realizados pelo Mercado Pago.
+
+O processo inclui:
+
+- Autorização explícita por variável de ambiente.
+- Bloqueio distribuído para evitar processamento simultâneo.
+- Cursor persistido para acompanhar o progresso.
+- Processamento em lotes.
+- Registro de resultados e falhas.
+- Testes automatizados.
+
+**Por segurança, a reconciliação deve permanecer desativada até a validação operacional.**
+
+A configuração padrão é:
+
+```env
+ENABLE_REFUND_RECONCILIATION=false
+```
+
+O comando disponível é:
+
+```bash
+npm run reconcile:refunds
+```
+
+**Não execute esse comando com a reconciliação habilitada em ambiente real sem autorização e validação prévia.**
+
+Para conhecer o funcionamento, as proteções e os procedimentos operacionais, consulte:
+
+[`docs/REFUND_RECONCILIATION.md`](docs/REFUND_RECONCILIATION.md)
 
 ---
 
