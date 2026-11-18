@@ -1,25 +1,27 @@
-
 import { classificarEventoReconciliacao } from "./refund-reconciliation.monitor.js";
 
 export function criarAlertaReconciliacao(registro) {
   const classificacao = classificarEventoReconciliacao(registro);
 
   const mensagens = {
-    REFUND_RECONCILIATION_COMPLETED:
-      "Reconciliação de reembolsos concluída.",
+    REFUND_RECONCILIATION_COMPLETED: "Reconciliação de reembolsos concluída.",
 
     REFUND_RECONCILIATION_SKIPPED_LOCKED:
       "Reconciliação ignorada: bloqueio ocupado.",
 
-    REFUND_RECONCILIATION_FAILED:
-      "Falha na reconciliação de reembolsos.",
+    REFUND_RECONCILIATION_FAILED: "Falha na reconciliação de reembolsos.",
 
-    UNKNOWN:
-      "Evento de reconciliação inválido ou desconhecido.",
+    UNKNOWN: "Evento de reconciliação inválido ou desconhecido.",
   };
 
   return {
     source: "refund-reconciliation",
+    ...(registro !== null &&
+    typeof registro === "object" &&
+    !Array.isArray(registro) &&
+    typeof registro.executionId === "string"
+      ? { executionId: registro.executionId }
+      : {}),
     event: classificacao.event,
     severity: classificacao.severity,
     requiresAttention: classificacao.requiresAttention,
@@ -27,20 +29,13 @@ export function criarAlertaReconciliacao(registro) {
   };
 }
 
-
 export function registrarAlertaReconciliacao(
   registro,
-  {
-    registrarInfo = console.log,
-    registrarErro = console.error,
-  } = {},
+  { registrarInfo = console.log, registrarErro = console.error } = {},
 ) {
   const alerta = criarAlertaReconciliacao(registro);
 
-  const registrar =
-    alerta.severity === "ERROR"
-      ? registrarErro
-      : registrarInfo;
+  const registrar = alerta.severity === "ERROR" ? registrarErro : registrarInfo;
 
   registrar(JSON.stringify(alerta));
 

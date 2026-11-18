@@ -1,4 +1,3 @@
-
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -119,5 +118,17 @@ describe("Alertas operacionais da reconciliação", () => {
       severity: "WARNING",
       requiresAttention: true,
     });
+  });
+
+  it("mantém compatibilidade com registros sem executionId", () => {
+    const alerta = criarAlertaReconciliacao({
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      status: "SUCCESS",
+      exitCode: 0,
+    });
+
+    expect(alerta.event).toBe("REFUND_RECONCILIATION_COMPLETED");
+    expect(alerta.severity).toBe("INFO");
+    expect(alerta).not.toHaveProperty("executionId");
   });
 });

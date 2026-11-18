@@ -1,5 +1,7 @@
 import { prisma } from "../src/config/prisma.ts";
 
+import { randomUUID } from "node:crypto";
+
 import { reconciliarReembolsosEmLote } from "../src/modules/payments/payment-refund.reconciliation-batch.js";
 
 import { registrarAlertaReconciliacao } from "../src/modules/monitoring/refund-reconciliation.alert.js";
@@ -10,6 +12,7 @@ export async function executarReconciliacao({
   registrarInfo = console.log,
   registrarErro = console.error,
 } = {}) {
+  const executionId = randomUUID();
   let codigoSaida = 0;
   let resultadoExecucao = "REFUND_RECONCILIATION_COMPLETED";
   let resumoExecucao = null;
@@ -57,6 +60,7 @@ export async function executarReconciliacao({
     registrarResultado(resultadoExecucao);
 
     const eventoEstruturado = {
+      executionId,
       event: resultadoExecucao,
       status:
         resultadoExecucao === "REFUND_RECONCILIATION_COMPLETED"

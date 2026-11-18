@@ -290,12 +290,20 @@ describe("Executor de reconciliação de reembolsos", () => {
       .filter(Boolean);
 
     expect(codigo).toBe(0);
+
     expect(registros).toContainEqual({
+      executionId: expect.any(String),
       event: "REFUND_RECONCILIATION_COMPLETED",
       status: "SUCCESS",
       exitCode: 0,
       timestamp: expect.any(String),
-      summary: resumo,
+      summary: {
+        verificados: 5,
+        reembolsados: 2,
+        semReembolso: 3,
+        naoConfirmados: 0,
+        erros: 0,
+      },
     });
 
     expect(Number.isNaN(Date.parse(registros[0].timestamp))).toBe(false);
@@ -589,5 +597,219 @@ describe("Executor de reconciliação de reembolsos", () => {
     expect(codigo).toBe(1);
     expect(executar).not.toHaveBeenCalled();
     expect(registrarErro).toHaveBeenCalledOnce();
+  });
+
+  it("compartilha o mesmo executionId entre evento e alerta", async () => {
+    const registrarInfo = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 1,
+        reembolsados: 0,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 0,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    const registros = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const evento = registros.find(
+      (registro) =>
+        registro.event === "REFUND_RECONCILIATION_COMPLETED" &&
+        registro.status === "SUCCESS",
+    );
+
+    const alerta = registros.find(
+      (registro) => registro.source === "refund-reconciliation",
+    );
+
+    expect(codigo).toBe(0);
+    expect(evento).toBeDefined();
+    expect(alerta).toBeDefined();
+
+    expect(evento.executionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+
+    expect(alerta.executionId).toBe(evento.executionId);
+  });
+
+  it("gera executionIds diferentes para execuções distintas", async () => {
+    const registrarInfo = vi.fn();
+
+    const reconciliar = vi.fn().mockResolvedValue({
+      verificados: 1,
+      reembolsados: 0,
+      semReembolso: 1,
+      naoConfirmados: 0,
+      erros: 0,
+    });
+
+    for (let i = 0; i < 2; i++) {
+      await executarReconciliacao({
+        reconciliar,
+        desconectar: vi.fn(),
+        registrarInfo,
+        registrarErro: vi.fn(),
+      });
+    }
+
+    const eventos = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (registro) =>
+          registro?.event === "REFUND_RECONCILIATION_COMPLETED" &&
+          registro?.status === "SUCCESS",
+      );
+
+    expect(eventos).toHaveLength(2);
+    expect(eventos[0].executionId).toBeTruthy();
+    expect(eventos[1].executionId).toBeTruthy();
+    expect(eventos[0].executionId).not.toBe(eventos[1].executionId);
+    expect(reconciliar).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserva executionId quando o bloqueio está ocupado", async () => {
+    const registrarInfo = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        bloqueado: true,
+        verificados: 0,
+        reembolsados: 0,
+        semReembolso: 0,
+        naoConfirmados: 0,
+        erros: 0,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    const registros = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const evento = registros.find(
+      (registro) =>
+        registro.event === "REFUND_RECONCILIATION_SKIPPED_LOCKED" &&
+        registro.status === "SKIPPED",
+    );
+
+    const alerta = registros.find(
+      (registro) => registro.source === "refund-reconciliation",
+    );
+
+    expect(codigo).toBe(0);
+    expect(evento).toBeDefined();
+    expect(alerta).toBeDefined();
+    expect(alerta.severity).toBe("WARNING");
+    expect(alerta.executionId).toBe(evento.executionId);
+  });
+
+  it("preserva executionId quando a reconciliação falha", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockRejectedValue(new Error("Falha simulada")),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const registros = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const evento = registros.find(
+      (registro) =>
+        registro.event === "REFUND_RECONCILIATION_FAILED" &&
+        registro.status === "FAILED",
+    );
+
+    const alerta = registros.find(
+      (registro) => registro.source === "refund-reconciliation",
+    );
+
+    expect(codigo).toBe(1);
+    expect(evento).toBeDefined();
+    expect(alerta).toBeDefined();
+    expect(alerta.severity).toBe("ERROR");
+    expect(alerta.executionId).toBe(evento.executionId);
+  });
+
+  it("preserva executionId quando a desconexão do Prisma falha", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 1,
+        reembolsados: 0,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 0,
+      }),
+      desconectar: vi
+        .fn()
+        .mockRejectedValue(new Error("Falha simulada na desconexão")),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const registros = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const evento = registros.find(
+      (registro) =>
+        registro.event === "REFUND_RECONCILIATION_FAILED" &&
+        registro.status === "FAILED",
+    );
+
+    const alerta = registros.find(
+      (registro) => registro.source === "refund-reconciliation",
+    );
+
+    expect(codigo).toBe(1);
+    expect(evento).toBeDefined();
+    expect(alerta).toBeDefined();
+    expect(alerta.severity).toBe("ERROR");
+    expect(alerta.executionId).toBe(evento.executionId);
   });
 });

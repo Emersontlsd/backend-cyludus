@@ -131,6 +131,7 @@ Exemplo:
 
 ```json
 {
+  "executionId": "550e8400-e29b-41d4-a716-446655440000",
   "event": "REFUND_RECONCILIATION_COMPLETED",
   "status": "SUCCESS",
   "exitCode": 0,
@@ -168,9 +169,18 @@ executor financeiro e não gera esse evento estruturado.
 Os eventos JSON poderão ser utilizados por ferramentas de monitoramento
 para identificar falhas e execuções ignoradas por bloqueio.
 
-Ainda não existem alertas automáticos nem agendamento da reconciliação.
-A ausência de um evento final também deverá ser considerada em um
-monitoramento futuro, pois pode indicar interrupção inesperada do processo.
+O módulo está integrado ao executor de reconciliação e gera
+alertas operacionais estruturados em JSON.
+
+Os alertas são registrados localmente em stdout ou stderr,
+sem envio de notificações externas.
+
+Ainda não existem coleta automática de logs, notificações
+externas ou agendamento da reconciliação.
+
+A ausência de um evento final também deverá ser considerada
+em um monitoramento futuro, pois pode indicar interrupção
+inesperada do processo.
 
 ## 9. Tratamento de falhas
 
@@ -298,6 +308,7 @@ disponibiliza duas funções:
 Os registros possuem os campos:
 
 - `source`: origem do alerta.
+- `executionId`: identificador UUID v4 da execução, quando presente no evento de origem.
 - `event`: identificador do evento.
 - `severity`: INFO, WARNING ou ERROR.
 - `requiresAttention`: indica necessidade de acompanhamento.
@@ -307,8 +318,7 @@ Os registros INFO e WARNING são enviados para stdout.
 
 Os registros ERROR são enviados para stderr.
 
-O módulo ainda não está integrado ao executor financeiro e
-não envia notificações externas.
+O módulo está integrado ao executor de reconciliação e gera alertas estruturados em JSON. Os alertas são registrados localmente em stdout ou stderr, sem envio de notificações externas.
 
 Os testes estão em:
 
@@ -380,3 +390,29 @@ Antes de liberar a reconciliação em produção:
 8. Obter autorização para habilitar a execução.
 
 **A reconciliação deve permanecer desativada até a conclusão dessas verificações.**
+
+## 16. Identificador único de execução (`executionId`)
+
+Cada chamada ao executor de reconciliação gera um UUID v4 por meio
+de `randomUUID()` do Node.js.
+
+O identificador permite correlacionar o evento estruturado com
+o alerta operacional da mesma execução.
+
+### Regras
+
+- Cada execução recebe um identificador diferente.
+- O evento e o alerta compartilham o mesmo `executionId`.
+- O identificador é preservado em conclusões, bloqueios e falhas.
+- Registros antigos sem `executionId` continuam compatíveis.
+- A identificação não altera o processamento financeiro.
+- A autorização continua controlada por `ENABLE_REFUND_RECONCILIATION`.
+
+### Limitações
+
+O identificador não garante persistência ou entrega dos registros.
+
+A detecção de registros duplicados, ausentes ou inconsistentes
+será tratada em uma etapa posterior.
+
+Os alertas continuam locais, sem notificações externas.
