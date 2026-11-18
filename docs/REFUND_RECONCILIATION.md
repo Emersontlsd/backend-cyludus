@@ -287,6 +287,33 @@ Para executá-los:
 npx vitest run tests/refund-reconciliation.monitor.test.js
 ```
 
+### Registros de alertas operacionais
+
+O módulo `src/modules/monitoring/refund-reconciliation.alert.js`
+disponibiliza duas funções:
+
+- `criarAlertaReconciliacao`: transforma um evento em um alerta estruturado.
+- `registrarAlertaReconciliacao`: registra o alerta em formato JSON.
+
+Os registros possuem os campos:
+
+- `source`: origem do alerta.
+- `event`: identificador do evento.
+- `severity`: INFO, WARNING ou ERROR.
+- `requiresAttention`: indica necessidade de acompanhamento.
+- `message`: descrição operacional.
+
+Os registros INFO e WARNING são enviados para stdout.
+
+Os registros ERROR são enviados para stderr.
+
+O módulo ainda não está integrado ao executor financeiro e
+não envia notificações externas.
+
+Os testes estão em:
+
+`tests/refund-reconciliation.alert.test.js`
+
 ## 14. Estado atual
 
 | Funcionalidade                        | Situação                     |
@@ -301,6 +328,8 @@ npx vitest run tests/refund-reconciliation.monitor.test.js
 | Classificação de eventos operacionais | Implementada                 |
 | Coleta automática de logs             | Não implementada             |
 | Alertas automáticos                   | Não implementados            |
+| Geração de alertas estruturados       | Implementada                 |
+| Integração dos alertas ao executor    | Não implementada             |
 
 ## 15. Recomendações para produção
 
