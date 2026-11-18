@@ -172,8 +172,6 @@ Ainda não existem alertas automáticos nem agendamento da reconciliação.
 A ausência de um evento final também deverá ser considerada em um
 monitoramento futuro, pois pode indicar interrupção inesperada do processo.
 
-````
-
 ## 9. Tratamento de falhas
 
 Falhas individuais são registradas e contabilizadas.
@@ -211,7 +209,7 @@ Para executar todos os testes:
 
 ```powershell
 npm test
-````
+```
 
 Os testes automatizados utilizam simulações e não substituem uma validação operacional controlada.
 
@@ -230,19 +228,81 @@ Antes de implementar um agendador, definir:
 - Procedimento de desativação emergencial.
 - Validação com dados e credenciais de teste.
 
-## 13. Estado atual
+## 13. Monitoramento operacional dos eventos
 
-| Funcionalidade                    | Situação                     |
-| --------------------------------- | ---------------------------- |
-| Executor manual                   | Implementado                 |
-| Proteção por variável de ambiente | Implementada                 |
-| Bloqueio distribuído              | Implementado                 |
-| Cursor persistido                 | Implementado                 |
-| Testes automatizados              | Aprovados na última execução |
-| Execução financeira real          | Não validada                 |
-| Agendamento automático            | Não implementado             |
+O módulo `src/modules/monitoring/refund-reconciliation.monitor.js`
+disponibiliza a função `classificarEventoReconciliacao`.
 
-## 14. Recomendações para produção
+Ela recebe um objeto ou uma string JSON com o resultado da
+reconciliação e retorna uma classificação operacional.
+
+### Classificações
+
+| Evento                               | Gravidade | Requer atenção |
+| ------------------------------------ | --------- | -------------- |
+| REFUND_RECONCILIATION_COMPLETED      | INFO      | Não            |
+| REFUND_RECONCILIATION_SKIPPED_LOCKED | WARNING   | Sim            |
+| REFUND_RECONCILIATION_FAILED         | ERROR     | Sim            |
+| Evento inválido ou desconhecido      | ERROR     | Sim            |
+
+O classificador verifica a compatibilidade entre o evento,
+o status e o código de saída.
+
+### Orientações operacionais
+
+**INFO:** registrar a conclusão da execução.
+
+**WARNING:** verificar se existe outra reconciliação em andamento.
+O bloqueio ocupado não significa necessariamente uma falha.
+
+**ERROR:** investigar a causa antes de considerar uma nova execução.
+
+Eventos inválidos ou contraditórios exigem investigação e não
+devem ser interpretados como sucesso.
+
+### Limitações atuais
+
+O módulo apenas classifica eventos recebidos.
+
+Ainda não existem:
+
+- Coleta automática de logs.
+- Notificações externas.
+- Agendamento da reconciliação.
+- Detecção automática de ausência de execução.
+- Integração com plataformas de monitoramento.
+
+A reconciliação deve permanecer desativada até a conclusão das
+validações operacionais necessárias.
+
+### Testes
+
+O classificador possui testes automatizados em:
+
+`tests/refund-reconciliation.monitor.test.js`
+
+Para executá-los:
+
+```powershell
+npx vitest run tests/refund-reconciliation.monitor.test.js
+```
+
+## 14. Estado atual
+
+| Funcionalidade                        | Situação                     |
+| ------------------------------------- | ---------------------------- |
+| Executor manual                       | Implementado                 |
+| Proteção por variável de ambiente     | Implementada                 |
+| Bloqueio distribuído                  | Implementado                 |
+| Cursor persistido                     | Implementado                 |
+| Testes automatizados                  | Aprovados na última execução |
+| Execução financeira real              | Não validada                 |
+| Agendamento automático                | Não implementado             |
+| Classificação de eventos operacionais | Implementada                 |
+| Coleta automática de logs             | Não implementada             |
+| Alertas automáticos                   | Não implementados            |
+
+## 15. Recomendações para produção
 
 Antes de liberar a reconciliação em produção:
 
