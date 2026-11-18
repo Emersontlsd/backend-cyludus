@@ -395,4 +395,199 @@ describe("Executor de reconciliação de reembolsos", () => {
       summary: null,
     });
   });
+
+  it("emite exatamente um alerta INFO após conclusão", async () => {
+    const registrarInfo = vi.fn();
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 2,
+        reembolsados: 1,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 0,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro,
+    });
+
+    const alertas = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter((registro) => registro?.source === "refund-reconciliation");
+
+    expect(codigo).toBe(0);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      severity: "INFO",
+      requiresAttention: false,
+    });
+    expect(registrarErro).not.toHaveBeenCalled();
+  });
+
+  it("emite exatamente um alerta WARNING para bloqueio ocupado", async () => {
+    const registrarInfo = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({ bloqueado: true }),
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    const alertas = registrarInfo.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter((registro) => registro?.source === "refund-reconciliation");
+
+    expect(codigo).toBe(0);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      event: "REFUND_RECONCILIATION_SKIPPED_LOCKED",
+      severity: "WARNING",
+      requiresAttention: true,
+    });
+  });
+
+  it("emite alerta ERROR para erros individuais", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockResolvedValue({
+        verificados: 3,
+        reembolsados: 1,
+        semReembolso: 1,
+        naoConfirmados: 0,
+        erros: 1,
+      }),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const alertas = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter((registro) => registro?.source === "refund-reconciliation");
+
+    expect(codigo).toBe(1);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      event: "REFUND_RECONCILIATION_FAILED",
+      severity: "ERROR",
+      requiresAttention: true,
+    });
+  });
+
+  it("emite alerta ERROR quando ocorre exceção", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarReconciliacao({
+      reconciliar: vi.fn().mockRejectedValue(new Error("Falha simulada")),
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    const alertas = registrarErro.mock.calls
+      .map(([mensagem]) => {
+        try {
+          return JSON.parse(mensagem);
+        } catch {
+          return null;
+        }
+      })
+      .filter((registro) => registro?.source === "refund-reconciliation");
+
+    expect(codigo).toBe(1);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0].severity).toBe("ERROR");
+  });
+
+  it("preserva código 0 quando o registro do alerta INFO falha", async () => {
+    const reconciliar = vi.fn().mockResolvedValue({
+      verificados: 1,
+      reembolsados: 0,
+      semReembolso: 1,
+      naoConfirmados: 0,
+      erros: 0,
+    });
+
+    const registrarInfo = vi.fn((mensagem) => {
+      if (
+        typeof mensagem === "string" &&
+        mensagem.includes('"source":"refund-reconciliation"')
+      ) {
+        throw new Error("Falha simulada no registro do alerta");
+      }
+    });
+
+    const codigo = await executarReconciliacao({
+      reconciliar,
+      desconectar: vi.fn(),
+      registrarInfo,
+      registrarErro: vi.fn(),
+    });
+
+    expect(codigo).toBe(0);
+    expect(reconciliar).toHaveBeenCalledOnce();
+  });
+
+  it("preserva código 1 quando o registro do alerta ERROR falha", async () => {
+    const reconciliar = vi
+      .fn()
+      .mockRejectedValue(new Error("Falha simulada na reconciliação"));
+
+    const registrarErro = vi.fn((mensagem) => {
+      if (
+        typeof mensagem === "string" &&
+        mensagem.includes('"source":"refund-reconciliation"')
+      ) {
+        throw new Error("Falha simulada no registro do alerta");
+      }
+    });
+
+    const codigo = await executarReconciliacao({
+      reconciliar,
+      desconectar: vi.fn(),
+      registrarInfo: vi.fn(),
+      registrarErro,
+    });
+
+    expect(codigo).toBe(1);
+    expect(reconciliar).toHaveBeenCalledOnce();
+  });
+
+  it("não executa reconciliação quando a autorização está desativada", async () => {
+    const executar = vi.fn();
+    const registrarErro = vi.fn();
+
+    const codigo = await iniciarReconciliacao({
+      autorizado: false,
+      executar,
+      registrarErro,
+    });
+
+    expect(codigo).toBe(1);
+    expect(executar).not.toHaveBeenCalled();
+    expect(registrarErro).toHaveBeenCalledOnce();
+  });
 });

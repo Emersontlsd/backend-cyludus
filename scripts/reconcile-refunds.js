@@ -2,6 +2,8 @@ import { prisma } from "../src/config/prisma.ts";
 
 import { reconciliarReembolsosEmLote } from "../src/modules/payments/payment-refund.reconciliation-batch.js";
 
+import { registrarAlertaReconciliacao } from "../src/modules/monitoring/refund-reconciliation.alert.js";
+
 export async function executarReconciliacao({
   reconciliar = reconciliarReembolsosEmLote,
   desconectar = () => prisma.$disconnect(),
@@ -76,6 +78,16 @@ export async function executarReconciliacao({
     };
 
     registrarResultado(JSON.stringify(eventoEstruturado));
+
+    try {
+      registrarAlertaReconciliacao(eventoEstruturado, {
+        registrarInfo,
+        registrarErro,
+      });
+    } catch {
+      // Uma falha de observabilidade não altera o resultado financeiro
+      // nem provoca uma nova tentativa de reconciliação.
+    }
   }
 
   return codigoSaida;

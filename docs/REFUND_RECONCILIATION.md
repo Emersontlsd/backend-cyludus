@@ -314,6 +314,41 @@ Os testes estão em:
 
 `tests/refund-reconciliation.alert.test.js`
 
+### Integração dos alertas ao executor
+
+O executor `scripts/reconcile-refunds.js` utiliza o módulo
+`refund-reconciliation.alert.js` para gerar alertas operacionais.
+
+Após a finalização da reconciliação e a tentativa de desconexão
+do Prisma, o executor registra:
+
+1. O identificador textual do resultado.
+2. O evento estruturado em JSON.
+3. Um alerta operacional estruturado em JSON.
+
+Cada execução do executor produz um alerta final, classificado como:
+
+- INFO: reconciliação concluída sem erros.
+- WARNING: reconciliação ignorada por bloqueio ocupado.
+- ERROR: falha de reconciliação, erros individuais ou falha de desconexão.
+
+Os alertas INFO e WARNING são registrados em stdout.
+Os alertas ERROR são registrados em stderr.
+
+A emissão do alerta é protegida por tratamento de exceções.
+Uma falha no registro do alerta não altera o código de saída
+da reconciliação e não provoca uma nova execução financeira.
+
+A tentativa de execução sem autorização continua bloqueada
+antes da inicialização do processamento financeiro.
+
+A integração não realiza notificações externas e não
+habilita execução automática ou agendamento.
+
+Os testes de integração estão em:
+
+`tests/reconcile-refunds.script.test.js`
+
 ## 14. Estado atual
 
 | Funcionalidade                        | Situação                     |
@@ -329,7 +364,7 @@ Os testes estão em:
 | Coleta automática de logs             | Não implementada             |
 | Alertas automáticos                   | Não implementados            |
 | Geração de alertas estruturados       | Implementada                 |
-| Integração dos alertas ao executor    | Não implementada             |
+| Integração dos alertas ao executor    | Implementada                 |
 
 ## 15. Recomendações para produção
 

@@ -27,6 +27,7 @@ export function criarAlertaReconciliacao(registro) {
   };
 }
 
+
 export function registrarAlertaReconciliacao(
   registro,
   {
@@ -37,7 +38,9 @@ export function registrarAlertaReconciliacao(
   const alerta = criarAlertaReconciliacao(registro);
 
   const registrar =
-    alerta.severity === "ERROR" ? registrarErro : registrarInfo;
+    alerta.severity === "ERROR"
+      ? registrarErro
+      : registrarInfo;
 
   registrar(JSON.stringify(alerta));
 
