@@ -416,3 +416,66 @@ A detecção de registros duplicados, ausentes ou inconsistentes
 será tratada em uma etapa posterior.
 
 Os alertas continuam locais, sem notificações externas.
+
+## 17. Integridade dos registros operacionais
+
+O módulo `src/modules/monitoring/refund-reconciliation.integrity.js` realiza uma análise independente da integridade dos registros operacionais da reconciliação de reembolsos.
+
+A função `analisarIntegridadeReconciliacao(registros)` recebe um array de eventos e alertas, representados por objetos JavaScript ou strings JSON.
+
+A análise é executada exclusivamente em memória, sem consultar o banco de dados, acessar o Mercado Pago ou executar operações financeiras.
+
+### 17.1. Correlação por executionId
+
+Os eventos finais e seus alertas são correlacionados pelo identificador `executionId`, no formato UUID v4.
+
+A análise identifica:
+
+- `DUPLICATE_EVENT`: mais de um evento final com o mesmo identificador.
+- `DUPLICATE_ALERT`: mais de um alerta com o mesmo identificador.
+- `MISSING_ALERT`: evento final sem alerta correspondente.
+- `ORPHAN_ALERT`: alerta sem evento final correspondente.
+- `INCONSISTENT_EVENT`: evento incompatível com as regras de classificação operacional.
+- `INCONSISTENT_ALERT`: divergência entre os campos do alerta e a classificação esperada para o evento.
+- `INVALID_EXECUTION_ID`: identificador presente, mas fora do formato UUID v4.
+- `INVALID_RECORD`: registro inválido ou JSON que não pode ser interpretado.
+- `UNKNOWN_RECORD`: registro que não corresponde à estrutura reconhecida de evento final ou alerta.
+
+### 17.2. Compatibilidade com registros antigos
+
+Registros anteriores à introdução do `executionId` continuam sendo aceitos como registros legados.
+
+Eventos legados reconhecidos são submetidos à validação de consistência entre `event`, `status` e `exitCode`.
+
+A ausência do identificador impede a correlação segura entre o evento e seu alerta, mas não representa automaticamente uma falha.
+
+### 17.3. Resultado da análise
+
+A função retorna um objeto com:
+
+- `integro`: indica se foram identificados problemas nos registros analisados.
+- `totalRegistros`: quantidade de entradas recebidas.
+- `totalEventos`: quantidade de identificadores únicos de eventos reconhecidos e correlacionáveis.
+- `totalAlertas`: quantidade de identificadores únicos de alertas reconhecidos e correlacionáveis.
+- `registrosLegados`: quantidade de registros reconhecidos sem `executionId`.
+- `problemas`: lista das inconsistências identificadas, com tipo, identificador e detalhes disponíveis.
+
+O resultado `integro: true` significa apenas que nenhuma inconsistência foi identificada nos registros fornecidos. Não comprova que todos os registros produzidos pelo executor foram coletados.
+
+### 17.4. Limitações
+
+O módulo não realiza coleta automática de logs, agendamento, monitoramento contínuo ou envio de notificações externas.
+
+Uma execução completamente ausente não pode ser identificada apenas pela análise dos registros recebidos. Essa verificação dependerá futuramente de uma referência externa, como um agendamento esperado ou um registro de início.
+
+Registros legados sem `executionId` não podem ser correlacionados com segurança.
+
+### 17.5. Testes automatizados
+
+Os testes estão disponíveis em:
+
+`tests/refund-reconciliation.integrity.test.js`
+
+Eles abrangem correlação, duplicidades, inconsistências, identificadores inválidos, registros legados e entradas malformadas.
+
+A implementação não modifica o processamento financeiro nem exige a ativação da reconciliação.
