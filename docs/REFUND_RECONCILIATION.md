@@ -479,3 +479,66 @@ Os testes estão disponíveis em:
 Eles abrangem correlação, duplicidades, inconsistências, identificadores inválidos, registros legados e entradas malformadas.
 
 A implementação não modifica o processamento financeiro nem exige a ativação da reconciliação.
+
+## 18. Leitura e análise operacional de logs
+
+O backend possui um leitor independente de logs da reconciliação de reembolsos, implementado em:
+
+`src/modules/monitoring/refund-reconciliation.logs.js`
+
+O módulo permite analisar registros armazenados em arquivos JSON Lines (JSONL), com um objeto JSON por linha.
+
+### 18.1. Extração dos registros
+
+A função `extrairRegistrosReconciliacao(conteudo)` interpreta o conteúdo recebido e seleciona eventos finais e alertas operacionais da reconciliação.
+
+A extração retorna:
+
+- `registros`: eventos e alertas reconhecidos.
+- `linhasIgnoradas`: mensagens comuns ou registros não relacionados.
+- `linhasInvalidas`: linhas que aparentam conter objetos ou arrays JSON, mas não podem ser interpretadas.
+
+A distinção entre mensagens comuns e JSON malformado é heurística. Linhas malformadas que não começam com `{` ou `[` podem ser classificadas como ignoradas.
+
+### 18.2. Análise de integridade
+
+A função `analisarLogsReconciliacao(conteudo)` utiliza o módulo de integridade existente para verificar duplicidades, alertas ausentes, alertas órfãos e inconsistências.
+
+A função `analisarArquivoLogsReconciliacao(caminho)` permite realizar a mesma análise a partir de um arquivo local.
+
+A leitura utiliza UTF-8 e não modifica o arquivo original.
+
+### 18.3. Comando operacional
+
+O comando está implementado em:
+
+`scripts/analyze-refund-logs.js`
+
+Pode ser executado por meio de:
+
+`npm run analyze:refund-logs -- ./caminho/arquivo.jsonl`
+
+O comando imprime um relatório JSON com os resultados da análise.
+
+Códigos de saída:
+
+- `0`: nenhuma inconsistência identificada nos registros analisados.
+- `1`: inconsistências identificadas ou linhas JSON não interpretáveis.
+- `2`: argumento inválido ou falha na leitura/análise.
+
+### 18.4. Limitações
+
+O comando não coleta logs automaticamente e não verifica se todas as execuções esperadas estão representadas no arquivo.
+
+O resultado `integro: true` refere-se somente aos registros reconhecidos e analisados. Não comprova a completude da coleta.
+
+O comando não acessa o banco de dados, não chama o Mercado Pago e não executa reconciliação financeira.
+
+### 18.5. Testes
+
+A implementação possui testes automatizados em:
+
+- `tests/refund-reconciliation.logs.test.js`
+- `tests/analyze-refund-logs.script.test.js`
+
+Os testes abrangem leitura, filtragem, análise de integridade, códigos de saída e tratamento de erros.
