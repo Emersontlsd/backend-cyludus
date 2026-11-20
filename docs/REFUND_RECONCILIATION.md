@@ -656,3 +656,84 @@ identificadores fictícios e destina-se exclusivamente a testes.
 A funcionalidade deve permanecer independente da execução
 financeira, com `ENABLE_REFUND_RECONCILIATION=false`
 durante as validações locais.
+
+## 20. Validação de consistência temporal
+
+A análise temporal verifica se os eventos finais e alertas
+operacionais da reconciliação possuem timestamps válidos e
+estão dentro de uma janela UTC previamente definida.
+
+### 20.1. Propagação de timestamps
+
+O executor registra um timestamp ISO 8601 UTC no evento final.
+
+O alerta operacional herda esse timestamp quando disponível,
+preservando a referência temporal da execução.
+
+Registros antigos sem timestamp continuam compatíveis com
+os analisadores anteriores.
+
+### 20.2. Validações realizadas
+
+- MISSING_TIMESTAMP: timestamp ausente.
+- INVALID_TIMESTAMP: timestamp inválido ou fora do formato esperado.
+- BEFORE_WINDOW: registro anterior ao início da janela.
+- AFTER_WINDOW: registro posterior ao fim da janela.
+- ALERT_BEFORE_EVENT: alerta anterior ao evento correspondente.
+- INVALID_RECORD: registro inválido.
+
+Os limites da janela são inclusivos.
+
+A ordem das linhas no arquivo não determina a ordem temporal
+dos acontecimentos.
+
+### 20.3. Utilização programática
+
+```javascript
+import { analisarLogsComValidacaoTemporalReconciliacao } from "../src/modules/monitoring/refund-reconciliation.logs.js";
+
+const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+  conteudoJsonl,
+  {
+    inicio: "2026-11-20T10:00:00.000Z",
+    fim: "2026-11-20T12:00:00.000Z",
+  },
+  manifestoOpcional,
+);
+```
+
+O terceiro argumento é opcional. Quando omitido, a análise
+de completude não é executada.
+
+O resultado contém:
+
+- aprovado
+- integridade
+- temporal
+- completude
+- linhasIgnoradas
+- linhasInvalidas
+
+### 20.4. Compatibilidade
+
+As funções existentes de análise de logs continuam disponíveis
+sem exigência de timestamps.
+
+A validação temporal é opcional e precisa ser solicitada
+explicitamente.
+
+### 20.5. Limitações
+
+A análise temporal é somente leitura.
+
+Ela não consulta o Mercado Pago, não acessa o banco de dados,
+não executa reconciliações e não altera pagamentos.
+
+Como o alerta herda o timestamp do evento, esta implementação
+não mede o atraso real de emissão do alerta.
+
+A validação temporal está disponível pela API programática.
+O comando analyze:refund-logs ainda não aceita uma janela
+temporal como argumento.
+
+```

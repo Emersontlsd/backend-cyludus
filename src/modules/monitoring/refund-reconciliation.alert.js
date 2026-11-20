@@ -16,12 +16,21 @@ export function criarAlertaReconciliacao(registro) {
 
   return {
     source: "refund-reconciliation",
+
     ...(registro !== null &&
     typeof registro === "object" &&
     !Array.isArray(registro) &&
     typeof registro.executionId === "string"
       ? { executionId: registro.executionId }
       : {}),
+
+    ...(registro !== null &&
+    typeof registro === "object" &&
+    !Array.isArray(registro) &&
+    typeof registro.timestamp === "string"
+      ? { timestamp: registro.timestamp }
+      : {}),
+
     event: classificacao.event,
     severity: classificacao.severity,
     requiresAttention: classificacao.requiresAttention,

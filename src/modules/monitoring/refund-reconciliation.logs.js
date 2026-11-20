@@ -4,6 +4,8 @@ import { analisarIntegridadeReconciliacao } from "./refund-reconciliation.integr
 
 import { analisarCompletudeReconciliacao } from "./refund-reconciliation.completeness.js";
 
+import { analisarConsistenciaTemporalReconciliacao } from "./refund-reconciliation.temporal.js";
+
 const EVENTOS_RECONCILIACAO = new Set([
   "REFUND_RECONCILIATION_COMPLETED",
   "REFUND_RECONCILIATION_SKIPPED_LOCKED",
@@ -107,6 +109,45 @@ export function analisarLogsComManifestoReconciliacao(conteudo, manifesto) {
       extracao.linhasInvalidas === 0,
 
     integridade,
+    completude,
+
+    linhasIgnoradas: extracao.linhasIgnoradas,
+    linhasInvalidas: extracao.linhasInvalidas,
+  };
+}
+
+
+export function analisarLogsComValidacaoTemporalReconciliacao(
+  conteudo,
+  janela,
+  manifesto = null,
+) {
+  const extracao = extrairRegistrosReconciliacao(conteudo);
+
+  const integridade = analisarIntegridadeReconciliacao(extracao.registros);
+
+  const temporal = analisarConsistenciaTemporalReconciliacao(
+    extracao.registros,
+    janela,
+  );
+
+  const completude =
+    manifesto === null
+      ? null
+      : analisarCompletudeReconciliacao(
+          manifesto,
+          extracao.registros,
+        );
+
+  return {
+    aprovado:
+      integridade.integro &&
+      temporal.consistente &&
+      (completude === null || completude.completo) &&
+      extracao.linhasInvalidas === 0,
+
+    integridade,
+    temporal,
     completude,
 
     linhasIgnoradas: extracao.linhasIgnoradas,

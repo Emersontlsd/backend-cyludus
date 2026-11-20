@@ -5,6 +5,7 @@ import {
   analisarLogsReconciliacao,
   analisarArquivoLogsReconciliacao,
   analisarLogsComManifestoReconciliacao,
+  analisarLogsComValidacaoTemporalReconciliacao,
 } from "../src/modules/monitoring/refund-reconciliation.logs.js";
 
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -226,5 +227,107 @@ describe("Leitura operacional dos logs de reconciliação", () => {
         ),
       ).toThrow(TypeError);
     });
+  });
+
+  const INICIO_TEMPORAL = "2026-11-20T10:00:00.000Z";
+  const FIM_TEMPORAL = "2026-11-20T12:00:00.000Z";
+
+  const JANELA_TEMPORAL = {
+    inicio: INICIO_TEMPORAL,
+    fim: FIM_TEMPORAL,
+  };
+
+  it("aprova logs com integridade e consistência temporal", () => {
+    const timestamp = "2026-11-20T11:00:00.000Z";
+
+    const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+      gerarConteudo({ ...evento, timestamp }, { ...alerta, timestamp }),
+      JANELA_TEMPORAL,
+    );
+
+    expect(resultado.aprovado).toBe(true);
+    expect(resultado.integridade.integro).toBe(true);
+    expect(resultado.temporal.consistente).toBe(true);
+    expect(resultado.completude).toBeNull();
+  });
+
+  it("reprova logs com timestamp fora da janela", () => {
+    const timestamp = "2026-11-20T13:00:00.000Z";
+
+    const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+      gerarConteudo({ ...evento, timestamp }, { ...alerta, timestamp }),
+      JANELA_TEMPORAL,
+    );
+
+    expect(resultado.aprovado).toBe(false);
+    expect(resultado.integridade.integro).toBe(true);
+
+    expect(resultado.temporal.problemas).toContainEqual(
+      expect.objectContaining({ tipo: "AFTER_WINDOW" }),
+    );
+  });
+
+  it("reprova logs sem timestamp na validação temporal", () => {
+    const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+      gerarConteudo(evento, alerta),
+      JANELA_TEMPORAL,
+    );
+
+    expect(resultado.aprovado).toBe(false);
+    expect(resultado.integridade.integro).toBe(true);
+
+    expect(resultado.temporal.problemas).toContainEqual(
+      expect.objectContaining({ tipo: "MISSING_TIMESTAMP" }),
+    );
+  });
+
+  it("reprova JSONL inválido mesmo com timestamps válidos", () => {
+    const timestamp = "2026-11-20T11:00:00.000Z";
+
+    const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+      gerarConteudo(
+        "{json inválido",
+        { ...evento, timestamp },
+        { ...alerta, timestamp },
+      ),
+      JANELA_TEMPORAL,
+    );
+
+    expect(resultado.aprovado).toBe(false);
+    expect(resultado.linhasInvalidas).toBe(1);
+    expect(resultado.temporal.consistente).toBe(true);
+  });
+
+  it("combina integridade, completude e análise temporal", () => {
+    const timestamp = "2026-11-20T11:00:00.000Z";
+
+    const manifesto = {
+      schemaVersion: 1,
+      expectedExecutions: [
+        {
+          executionId: ID,
+          expectedEvent: "REFUND_RECONCILIATION_COMPLETED",
+        },
+      ],
+    };
+
+    const resultado = analisarLogsComValidacaoTemporalReconciliacao(
+      gerarConteudo({ ...evento, timestamp }, { ...alerta, timestamp }),
+      JANELA_TEMPORAL,
+      manifesto,
+    );
+
+    expect(resultado.aprovado).toBe(true);
+    expect(resultado.integridade.integro).toBe(true);
+    expect(resultado.temporal.consistente).toBe(true);
+    expect(resultado.completude.completo).toBe(true);
+  });
+
+  it("preserva os resultados das análises anteriores", () => {
+    const resultado = analisarLogsReconciliacao(gerarConteudo(evento, alerta));
+
+    expect(resultado.integro).toBe(true);
+    expect(resultado.totalEventos).toBe(1);
+    expect(resultado.totalAlertas).toBe(1);
   });
 });

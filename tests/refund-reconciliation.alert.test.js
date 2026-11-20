@@ -131,4 +131,41 @@ describe("Alertas operacionais da reconciliação", () => {
     expect(alerta.severity).toBe("INFO");
     expect(alerta).not.toHaveProperty("executionId");
   });
+
+  it("preserva o timestamp do evento original", () => {
+    const timestamp = "2026-11-20T16:30:00.000Z";
+
+    const alerta = criarAlertaReconciliacao({
+      executionId: "550e8400-e29b-41d4-a716-446655440000",
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      status: "SUCCESS",
+      exitCode: 0,
+      timestamp,
+    });
+
+    expect(alerta.timestamp).toBe(timestamp);
+    expect(alerta.executionId).toBe("550e8400-e29b-41d4-a716-446655440000");
+  });
+
+  it("mantém compatibilidade com eventos sem timestamp", () => {
+    const alerta = criarAlertaReconciliacao({
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      status: "SUCCESS",
+      exitCode: 0,
+    });
+
+    expect(alerta).not.toHaveProperty("timestamp");
+    expect(alerta.severity).toBe("INFO");
+  });
+
+  it("não propaga timestamp que não seja string", () => {
+    const alerta = criarAlertaReconciliacao({
+      event: "REFUND_RECONCILIATION_COMPLETED",
+      status: "SUCCESS",
+      exitCode: 0,
+      timestamp: 123456,
+    });
+
+    expect(alerta).not.toHaveProperty("timestamp");
+  });
 });
