@@ -1,0 +1,18 @@
+
+{
+  "schemaVersion": 1,
+  "expectedExecutions": [
+    {
+      "executionId": "550e8400-e29b-41d4-a716-446655440000",
+      "expectedEvent": "REFUND_RECONCILIATION_COMPLETED"
+    },
+    {
+      "executionId": "550e8400-e29b-41d4-a716-446655440001",
+      "expectedEvent": "REFUND_RECONCILIATION_SKIPPED_LOCKED"
+    },
+    {
+      "executionId": "550e8400-e29b-41d4-a716-446655440002",
+      "expectedEvent": "REFUND_RECONCILIATION_FAILED"
+    }
+  ]
+}

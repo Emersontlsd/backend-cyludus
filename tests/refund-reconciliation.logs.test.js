@@ -4,6 +4,7 @@ import {
   extrairRegistrosReconciliacao,
   analisarLogsReconciliacao,
   analisarArquivoLogsReconciliacao,
+  analisarLogsComManifestoReconciliacao,
 } from "../src/modules/monitoring/refund-reconciliation.logs.js";
 
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -158,5 +159,72 @@ describe("Leitura operacional dos logs de reconciliação", () => {
         force: true,
       });
     }
+  });
+
+  describe("Integração entre integridade e completude", () => {
+    const manifesto = {
+      schemaVersion: 1,
+      expectedExecutions: [
+        {
+          executionId: ID,
+          expectedEvent: "REFUND_RECONCILIATION_COMPLETED",
+        },
+      ],
+    };
+
+    it("aprova logs íntegros e completos", () => {
+      const resultado = analisarLogsComManifestoReconciliacao(
+        gerarConteudo(evento, alerta),
+        manifesto,
+      );
+
+      expect(resultado.aprovado).toBe(true);
+      expect(resultado.integridade.integro).toBe(true);
+      expect(resultado.completude.completo).toBe(true);
+      expect(resultado.completude.totalEncontradas).toBe(1);
+    });
+
+    it("reprova quando falta uma execução esperada", () => {
+      const resultado = analisarLogsComManifestoReconciliacao("", manifesto);
+
+      expect(resultado.aprovado).toBe(false);
+      expect(resultado.completude.totalAusentes).toBe(1);
+      expect(resultado.completude.problemas).toContainEqual({
+        tipo: "MISSING_EXECUTION",
+        executionId: ID,
+      });
+    });
+
+    it("reprova quando falta o alerta", () => {
+      const resultado = analisarLogsComManifestoReconciliacao(
+        gerarConteudo(evento),
+        manifesto,
+      );
+
+      expect(resultado.aprovado).toBe(false);
+      expect(resultado.integridade.integro).toBe(false);
+      expect(resultado.completude.completo).toBe(true);
+    });
+
+    it("reprova quando existe JSON inválido", () => {
+      const resultado = analisarLogsComManifestoReconciliacao(
+        gerarConteudo(evento, alerta, "{json inválido"),
+        manifesto,
+      );
+
+      expect(resultado.aprovado).toBe(false);
+      expect(resultado.integridade.integro).toBe(true);
+      expect(resultado.completude.completo).toBe(true);
+      expect(resultado.linhasInvalidas).toBe(1);
+    });
+
+    it("rejeita manifesto inválido", () => {
+      expect(() =>
+        analisarLogsComManifestoReconciliacao(
+          gerarConteudo(evento, alerta),
+          {},
+        ),
+      ).toThrow(TypeError);
+    });
   });
 });

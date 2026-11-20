@@ -542,3 +542,117 @@ A implementação possui testes automatizados em:
 - `tests/analyze-refund-logs.script.test.js`
 
 Os testes abrangem leitura, filtragem, análise de integridade, códigos de saída e tratamento de erros.
+
+## 19. Verificação de completude operacional
+
+A verificação de completude compara os registros de execução
+da reconciliação com um manifesto independente de execuções
+esperadas.
+
+Essa análise complementa a verificação de integridade dos
+logs. Enquanto a integridade identifica inconsistências entre
+eventos finais e alertas, a completude identifica execuções
+esperadas que não aparecem nos registros.
+
+### 19.1. Formato do manifesto
+
+O manifesto deve ser um arquivo JSON com `schemaVersion: 1`
+e uma lista `expectedExecutions`.
+
+Exemplo:
+
+```json
+{
+  "schemaVersion": 1,
+  "expectedExecutions": [
+    {
+      "executionId": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "executionId": "550e8400-e29b-41d4-a716-446655440001",
+      "expectedEvent": "REFUND_RECONCILIATION_COMPLETED"
+    }
+  ]
+}
+```
+
+O campo `executionId` é obrigatório e deve ser um UUIDv4.
+
+O campo `expectedEvent` é opcional. Quando informado,
+deve corresponder a um dos eventos finais reconhecidos:
+
+- `REFUND_RECONCILIATION_COMPLETED`
+- `REFUND_RECONCILIATION_SKIPPED_LOCKED`
+- `REFUND_RECONCILIATION_FAILED`
+
+O manifesto precisa ser produzido a partir de uma fonte
+independente dos logs analisados. Caso contrário, a análise
+não consegue detectar de maneira confiável execuções
+que deveriam ter ocorrido, mas não foram registradas.
+
+### 19.2. Execução do comando
+
+Análise de integridade sem manifesto:
+
+```powershell
+npm run analyze:refund-logs -- "caminho\logs.jsonl"
+```
+
+Análise combinada de integridade e completude:
+
+```powershell
+npm run analyze:refund-logs -- "caminho\logs.jsonl" "caminho\manifesto.json"
+```
+
+O comando realiza apenas leitura dos arquivos informados.
+Não executa reconciliação financeira, pagamentos,
+estornos ou alterações no banco de dados.
+
+### 19.3. Indicadores de completude
+
+- `completo`: informa se a análise de completude foi aprovada.
+- `totalEsperadas`: quantidade de execuções distintas esperadas.
+- `totalEncontradas`: quantidade de execuções esperadas encontradas.
+- `totalAusentes`: quantidade de execuções esperadas não encontradas.
+- `totalInesperadas`: quantidade de execuções encontradas fora do manifesto.
+- `problemas`: lista das inconsistências identificadas.
+
+Os tipos de problema incluem:
+
+- `MISSING_EXECUTION`: execução esperada ausente.
+- `UNEXPECTED_EXECUTION`: execução encontrada fora do manifesto.
+- `UNEXPECTED_EVENT`: evento final diferente do esperado.
+- `DUPLICATE_EXPECTED_EXECUTION`: identificador repetido no manifesto.
+
+### 19.4. Critérios de aprovação
+
+Quando o manifesto é informado, o relatório apresenta:
+
+- `integridade`: resultado da correlação entre eventos e alertas.
+- `completude`: resultado da comparação com o manifesto.
+- `aprovado`: verdadeiro somente quando integridade e completude
+  estão aprovadas e não existem linhas JSON inválidas.
+
+Códigos de saída:
+
+- `0`: análise aprovada.
+- `1`: inconsistências identificadas ou linhas JSON inválidas.
+- `2`: erro de entrada, leitura ou manifesto inválido.
+
+### 19.5. Limitações
+
+A análise depende da qualidade e independência do manifesto.
+Ela não comprova que uma operação financeira foi efetivamente
+realizada, nem substitui a consulta às fontes oficiais do
+provedor de pagamentos.
+
+A ausência de uma execução nos logs indica ausência de
+evidência no conjunto analisado, não necessariamente ausência
+da execução no ambiente de origem.
+
+O manifesto de exemplo em `tests/fixtures/` contém
+identificadores fictícios e destina-se exclusivamente a testes.
+
+A funcionalidade deve permanecer independente da execução
+financeira, com `ENABLE_REFUND_RECONCILIATION=false`
+durante as validações locais.

@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { analisarIntegridadeReconciliacao } from "./refund-reconciliation.integrity.js";
 
+import { analisarCompletudeReconciliacao } from "./refund-reconciliation.completeness.js";
+
 const EVENTOS_RECONCILIACAO = new Set([
   "REFUND_RECONCILIATION_COMPLETED",
   "REFUND_RECONCILIATION_SKIPPED_LOCKED",
@@ -86,4 +88,28 @@ export async function analisarArquivoLogsReconciliacao(caminho) {
   const conteudo = await readFile(caminho, "utf8");
 
   return analisarLogsReconciliacao(conteudo);
+}
+
+export function analisarLogsComManifestoReconciliacao(conteudo, manifesto) {
+  const extracao = extrairRegistrosReconciliacao(conteudo);
+
+  const integridade = analisarIntegridadeReconciliacao(extracao.registros);
+
+  const completude = analisarCompletudeReconciliacao(
+    manifesto,
+    extracao.registros,
+  );
+
+  return {
+    aprovado:
+      integridade.integro &&
+      completude.completo &&
+      extracao.linhasInvalidas === 0,
+
+    integridade,
+    completude,
+
+    linhasIgnoradas: extracao.linhasIgnoradas,
+    linhasInvalidas: extracao.linhasInvalidas,
+  };
 }

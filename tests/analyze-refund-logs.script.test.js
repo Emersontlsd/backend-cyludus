@@ -1,9 +1,6 @@
-
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  executarAnaliseLogs,
-} from "../scripts/analyze-refund-logs.js";
+import { executarAnaliseLogs } from "../scripts/analyze-refund-logs.js";
 
 function criarDependencias(resultado) {
   return {
@@ -38,13 +35,9 @@ describe("Comando de análise de logs da reconciliação", () => {
       "logs/reconciliacao.jsonl",
     );
 
-    const relatorio = JSON.parse(
-      dependencias.registrarInfo.mock.calls[0][0],
-    );
+    const relatorio = JSON.parse(dependencias.registrarInfo.mock.calls[0][0]);
 
-    expect(relatorio.event).toBe(
-      "REFUND_RECONCILIATION_LOG_ANALYSIS",
-    );
+    expect(relatorio.event).toBe("REFUND_RECONCILIATION_LOG_ANALYSIS");
     expect(relatorio.integro).toBe(true);
     expect(relatorio.timestamp).toBeDefined();
   });
@@ -101,5 +94,122 @@ describe("Comando de análise de logs da reconciliação", () => {
 
     expect(dependencias.analisar).toHaveBeenCalledOnce();
     expect(dependencias.registrarErro).not.toHaveBeenCalled();
+  });
+
+  it("aprova análise com manifesto completo", async () => {
+    const registrarInfo = vi.fn();
+    const analisarComManifesto = vi.fn().mockResolvedValue({
+      aprovado: true,
+      integridade: { integro: true },
+      completude: { completo: true },
+      linhasIgnoradas: 0,
+      linhasInvalidas: 0,
+    });
+
+    const codigo = await executarAnaliseLogs({
+      caminho: "logs.jsonl",
+      caminhoManifesto: "manifesto.json",
+      analisarComManifesto,
+      registrarInfo,
+    });
+
+    expect(codigo).toBe(0);
+    expect(analisarComManifesto).toHaveBeenCalledWith(
+      "logs.jsonl",
+      "manifesto.json",
+    );
+    expect(registrarInfo).toHaveBeenCalledOnce();
+  });
+
+  it("reprova análise com manifesto incompleto", async () => {
+    const analisarComManifesto = vi.fn().mockResolvedValue({
+      aprovado: false,
+      integridade: { integro: true },
+      completude: {
+        completo: false,
+        totalAusentes: 1,
+      },
+      linhasIgnoradas: 0,
+      linhasInvalidas: 0,
+    });
+
+    const codigo = await executarAnaliseLogs({
+      caminho: "logs.jsonl",
+      caminhoManifesto: "manifesto.json",
+      analisarComManifesto,
+      registrarInfo: vi.fn(),
+    });
+
+    expect(codigo).toBe(1);
+  });
+
+  it("rejeita caminho de manifesto vazio", async () => {
+    const registrarErro = vi.fn();
+
+    const codigo = await executarAnaliseLogs({
+      caminho: "logs.jsonl",
+      caminhoManifesto: "",
+      registrarErro,
+    });
+
+    expect(codigo).toBe(2);
+    expect(registrarErro).toHaveBeenCalled();
+  });
+
+  it("retorna erro quando não consegue ler o manifesto", async () => {
+    const analisarComManifesto = vi.fn().mockRejectedValue(new Error("ENOENT"));
+
+    const codigo = await executarAnaliseLogs({
+      caminho: "logs.jsonl",
+      caminhoManifesto: "inexistente.json",
+      analisarComManifesto,
+      registrarInfo: vi.fn(),
+      registrarErro: vi.fn(),
+    });
+
+    expect(codigo).toBe(2);
+  });
+
+  it("preserva o tipo da inconsistência no JSON emitido", async () => {
+    const registrarInfo = vi.fn();
+
+    const analisarComManifesto = vi.fn().mockResolvedValue({
+      aprovado: false,
+      integridade: {
+        integro: true,
+        problemas: [],
+      },
+      completude: {
+        completo: false,
+        totalEsperadas: 2,
+        totalEncontradas: 1,
+        totalAusentes: 1,
+        totalInesperadas: 0,
+        problemas: [
+          {
+            tipo: "MISSING_EXECUTION",
+            executionId: "550e8400-e29b-41d4-a716-446655440001",
+          },
+        ],
+      },
+      linhasIgnoradas: 0,
+      linhasInvalidas: 0,
+    });
+
+    const codigo = await executarAnaliseLogs({
+      caminho: "logs.jsonl",
+      caminhoManifesto: "manifesto.json",
+      analisarComManifesto,
+      registrarInfo,
+    });
+
+    expect(codigo).toBe(1);
+
+    const relatorio = JSON.parse(registrarInfo.mock.calls[0][0]);
+
+    expect(relatorio.completude.problemas).toContainEqual({
+      tipo: "MISSING_EXECUTION",
+      executionId: "550e8400-e29b-41d4-a716-446655440001",
+    });
   });
 });
